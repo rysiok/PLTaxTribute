@@ -1,3 +1,4 @@
+from tabulate import tabulate
 import csv
 import requests
 import pickle
@@ -6,27 +7,26 @@ from decimal import Decimal
 from enum import Enum
 
 
+# saves cache to file
 def save_cache(filename, CACHE):
-    if not filename:
-        return
     try:
         with open(filename, "wb") as f:
             pickle.dump(CACHE, f)
-    except:
+    except OSError:
         pass
 
 
+# loads cache from file
+# unsafe, don't relay on external cache
 def load_cache(filename):
-    if not filename:
-        return
     try:
         with open(filename, "rb") as f:
             return pickle.load(f)
-    except:
+    except OSError:
         return {}
 
 
-class TransactionType(Enum):
+class TransactionSide(Enum):
     BUY = 1
     SELL = 2
 
@@ -37,7 +37,8 @@ class CashFlowItemType(Enum):
     PL = 3
 
 
-class TR:
+# exante transaction log column positions
+class Column:
     TIME = 0
     SIDE = 2
     SYMBOL = 3
@@ -49,7 +50,8 @@ class TR:
 
 
 class Transaction:
-    def __init__(self, time: datetime, side: TransactionType, price: Decimal, currency: str, count: int, commission: Decimal, volume: Decimal):
+
+    def __init__(self, time: datetime, side: TransactionSide, price: Decimal, currency: str, count: int, commission: Decimal, volume: Decimal):
         self.time = time
         self.side = side
         self.price = price
@@ -57,6 +59,18 @@ class Transaction:
         self.count = count
         self.commission = commission
         self.volume = volume
+
+    @staticmethod
+    def from_cvs_row(csv_row):
+        return Transaction(datetime.fromisoformat(csv_row[Column.TIME]),
+                           TransactionSide.BUY if csv_row[Column.SIDE] == "buy" else TransactionSide.SELL,
+                           Decimal(csv_row[Column.PRICE]), row[Column.CURRENCY], int(csv_row[Column.COUNT]), Decimal(csv_row[Column.COMMISSION]),
+                           Decimal(csv_row[Column.VOLUME])
+                           )
+
+    @staticmethod
+    def get_symbol(csv_row):
+        return csv_row[Column.SYMBOL]
 
     def __repr__(self):
         return repr((
@@ -107,90 +121,116 @@ def get_nbp_day_before(currency: str, date: datetime):
             exchange_date = exchange_date - timedelta(days=1)
 
 
+class Account:
+    cashflows = {}
+
+    def init_cash_flow(self, transaction_log):
+        for symbol, tr in transaction_log.items():
+            # tr.sort(key=lambda x: x.time)
+            tr.reverse()
+
+            sell = [t for t in tr if t.side == TransactionSide.SELL]
+            buy = [t for t in tr if t.side == TransactionSide.BUY]
+
+            cashflow = []
+            if __debug__:
+                pl = 0
+            for s in sell:
+                cashflow.append(CashFlowItem(CashFlowItemType.TRADE, s.time, s.count, s.price, s.currency))
+                cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, s.time, -1, s.commission, s.currency))
+                if __debug__:
+                    income = s.count * s.price
+                    outcome = 0
+
+                while s.count and buy:
+                    b = buy[0]
+                    b.count -= s.count
+                    if b.count <= 0:
+                        if __debug__:
+                            outcome += (b.count + s.count) * b.price
+                        cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -(b.count + s.count), b.price, s.currency))
+                        cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, b.commission, s.currency))  # full cost
+                        s.count = -b.count  # left count
+                        del buy[0]
+                    else:
+                        if __debug__:
+                            outcome += s.count * b.price
+                        cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -s.count, b.price, s.currency))
+                        ratio = Decimal(s.count / (s.count + b.count))
+                        cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, round(b.commission * ratio, 2), s.currency))  # partial cost
+                        b.commission -= round(b.commission * ratio, 2)
+                        break
+                if __debug__:
+                    pl = pl + income - outcome
+            self.cashflows[symbol] = cashflow
+
+            if __debug__:  # validate data
+                trade_income = sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+                trade_cost = -sum([cf.count * cf.price for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
+                crc_income = sum([s.volume for s in sell])
+                if trade_income != crc_income:
+                    raise Exception(f"income doesn't math for symbol {symbol}")
+                if pl != trade_income - trade_cost:
+                    raise Exception(f"PL doesn't math for symbol {symbol}")
+
+
 def ls(text: str):
-    print("-" * (120 + 2))
-    print("- " + text + "-" * (120 - len(text)))
+    text = text.strip() + " "
+    print()
+    #print("-" * (120 + 2))
+    print("* " + text + "*" * (10 - len(text)))
 
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     CACHE = load_cache(".cache")
-    tr = {}
+    account = Account()
+    transaction_log = {}
     with open(r"TR.csv", newline='', encoding="utf-16") as csvfile:
         reader = csv.reader(csvfile, delimiter='\t')
         next(reader, None)
         for row in reader:
-            transactions = tr.get(row[TR.SYMBOL], None)
-            if not transactions:
-                tr[row[TR.SYMBOL]] = []
-                transactions = tr[row[TR.SYMBOL]]
-            transactions.append(Transaction(datetime.fromisoformat(row[TR.TIME]),
-                                            TransactionType.BUY if row[TR.SIDE] == "buy" else TransactionType.SELL,
-                                            Decimal(row[TR.PRICE]), row[TR.CURRENCY], int(row[TR.COUNT]), Decimal(row[TR.COMMISSION]),
-                                            Decimal(row[TR.VOLUME])
-                                            ))
-    cashflows = {}
-    for symbol, transactions in tr.items():
-        transactions.sort(key=lambda x: x.time)
+            symbol = Transaction.get_symbol(row)
+            tr = transaction_log.get(symbol, None)
+            if not tr:
+                transaction_log[symbol] = []
+                tr = transaction_log[symbol]
+            tr.append(Transaction.from_cvs_row(row))
 
-        sell = [t for t in transactions if t.side == TransactionType.SELL]
-        buy = [t for t in transactions if t.side == TransactionType.BUY]
-        cashflow = []
-        pl = 0
-        for s in sell:
-            cashflow.append(CashFlowItem(CashFlowItemType.TRADE, s.time, s.count, s.price, s.currency))
-            cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, s.time, -1, s.commission, s.currency))
-            income = s.count * s.price
-            outcome = 0
+    account.init_cash_flow(transaction_log)
+    cashflows = account.cashflows
 
-            while s.count and buy:
-                b = buy[0]
-                b.count -= s.count
-                if b.count <= 0:
-                    outcome += (b.count + s.count) * b.price
-                    cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -(b.count + s.count), b.price, s.currency))
-                    cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, b.commission, s.currency))  # full cost
-                    s.count = -b.count  # left count
-                    del buy[0]
-                else:
-                    outcome += s.count * b.price
-                    cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -s.count, b.price, s.currency))
-                    ratio = Decimal(s.count / (s.count + b.count))
-                    cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, round(b.commission * ratio, 2), s.currency))  # partial cost
-                    b.commission -= round(b.commission * ratio, 2)
-                    break
-            pl = pl + income - outcome
-        cashflows[symbol] = cashflow
-
-        if __debug__:  # validate data
-            trade_income = sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-            trade_cost = -sum([cf.count * cf.price for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
-            crc_income = sum([s.volume for s in sell])
-            if trade_income != crc_income:
-                raise Exception(f"income doesn't math for symbol {symbol}")
-            if pl != trade_income - trade_cost:
-                raise Exception(f"PL doesn't math for symbol {symbol}")
-
-    ls("USD")
+    ls("FOREGIN")
+    table = [["symbol", "currency", "income", "cost", "commission", "P/L"]]
     for symbol, cashflow in cashflows.items():
         trade_income = sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
         trade_cost = -sum([cf.count * cf.price for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
         commission_cost = -sum([cf.count * cf.price for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
         assert sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.COMMISSION]) == 0, f"commission_cost != 0"
 
-        print(f"** {symbol:15} : income {trade_income:10} : cost {trade_cost:10} : commission : {commission_cost:10} : P/L {trade_income - trade_cost - commission_cost:10}")
+        if cashflow:  # output only items with data
+            table.append([symbol, cashflow[0].currency, trade_income, trade_cost, commission_cost, trade_income - trade_cost - commission_cost])
+
+    print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
     ls("PLN")
+    table = [["symbol", "income", "cost", "commission", "P/L"]]
     for symbol, cashflow in cashflows.items():
         trade_income = sum([round(cf.count * cf.price * get_nbp_day_before(cf.currency, cf.time), 2) for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
         trade_cost = -sum([round(cf.count * cf.price * get_nbp_day_before(cf.currency, cf.time), 2) for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
         commission_cost = -sum([round(cf.count * cf.price * get_nbp_day_before(cf.currency, cf.time), 2) for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
-        print(f"** {symbol:15} : income {trade_income:10} : cost {trade_cost:10} : commission : {commission_cost:10} : P/L {trade_income - trade_cost - commission_cost:10}")
+
+        if cashflow:  # output only items with data
+            table.append([symbol, trade_income, trade_cost, commission_cost, trade_income - trade_cost - commission_cost])
+
+    print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
     trade_income = sum([round(cf.count * cf.price * get_nbp_day_before(cf.currency, cf.time), 2) for key in cashflows for cf in cashflows[key] if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
     trade_cost = -sum([round(cf.count * cf.price * get_nbp_day_before(cf.currency, cf.time), 2) for key in cashflows for cf in cashflows[key] if cf.count < 0])
 
     ls("TOTAL PLN")
-    print(f"** income {trade_income:10} : cost {trade_cost:10} : P/L {trade_income - trade_cost:10}")
+    table = [["income", "cost", "P/L"]]
+    table.append([trade_income, trade_cost, trade_income - trade_cost])
+    print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
     save_cache(".cache", CACHE)
