@@ -1,12 +1,11 @@
-import simplejson as json
-
-from tabulate import tabulate
 import csv
-import requests
-import pickle
 from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import Enum
+
+import requests
+import simplejson as json
+from tabulate import tabulate
 
 
 class bcolors:
@@ -78,7 +77,7 @@ class Transaction:
 
 
 class CashFlowItem:
-    def __init__(self, type: CashFlowItemType, time: datetime, count: int, price: Decimal, currency: str,pln : Decimal):
+    def __init__(self, type: CashFlowItemType, time: datetime, count: int, price: Decimal, currency: str, pln: Decimal):
         self.type = type
         self.time = time
         self.count = count
@@ -156,8 +155,7 @@ class Account:
                         self.transaction_log[transaction.symbol] = tr
                     tr.append(transaction)
 
-    def init_cash_flow(self):
-        nbp = NBP()
+    def init_cash_flow(self, nbp=NBP()):
         nbp.load_cache()
 
         for symbol, tr in self.transaction_log.items():
@@ -261,4 +259,3 @@ if __name__ == '__main__':
     table = [["income", "cost", "P/L"]]
     table.append([trade_income, trade_cost, trade_income - trade_cost])
     print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
-
