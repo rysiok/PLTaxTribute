@@ -1,7 +1,6 @@
 # exante_pl_tax
 
 # TODO:
-- ostrzeżenie o sprzedaży bez zakupu
 - refaktoring
 - testy jednostkowe
 - obsługa wielu plików z danymi

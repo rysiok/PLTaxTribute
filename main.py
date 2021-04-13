@@ -166,6 +166,10 @@ class Account:
             sell = [t for t in tr if t.side == TransactionSide.SELL]
             buy = [t for t in tr if t.side == TransactionSide.BUY]
 
+            if not buy:
+                print(f"{bcolors.WARNING}No BUY transactions for symbol: {symbol}.{bcolors.ENDC}")
+                continue
+
             cashflow = []
             if __debug__:
                 pl = 0
