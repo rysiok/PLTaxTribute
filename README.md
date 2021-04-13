@@ -1,3 +1,5 @@
+![example workflow](https://github.com/rysiok/exante_pl_tax/actions/workflows/python-package.yml/badge.svg)
+
 This script Calculates income and cost from Exante transaction log, using FIFO approach and D-1 NBP PLN exchange rate.
 
 Usage: 
