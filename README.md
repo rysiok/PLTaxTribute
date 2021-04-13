@@ -1,9 +1,24 @@
-# exante_pl_tax
+This script Calculates income and cost from Exante transaction log, using FIFO approach and D-1 NBP PLN exchange rate.
 
-# TODO:
-- obsługa wielu plików z danymi
-- dodanie obslugi dywidend
-- podział na lata
-- optymalizacja podzialu na lata
-- uwzglednianie autokonversji walut
-- uwzglednienie splitów akcji
+Usage: 
+    
+    exante.py [OPTIONS] COMMAND1 [ARGS]... [COMMAND2 [ARGS]...]...
+
+Options:
+    
+    -i, --input-file TEXT  Transaction log file name.  [required]
+    --help                 Show this message and exit.
+
+Commands:
+  
+    foreign  Calculation without conversion to PLN per asset.
+    pln      Calculation in PLN per asset (includes total).
+    total    Total calculation in PLN.
+
+## TODO:
+- multifile transaction log
+- dividends
+- mulitiyear support
+- mulitiyear cache and opt
+- autoconversion support
+- stock split support

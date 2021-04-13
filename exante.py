@@ -268,13 +268,14 @@ def ls(text: str):
 @click.pass_context
 # @click.option('--output', type=click.Choice(['TABLE', 'JSON'], case_sensitive=False), default='TABLE', help='Transaction log file name.')
 def cli(ctx, input_file):
+    """This script Calculates income and cost from Exante transaction log, using FIFO approach and D-1 NBP PLN exchange rate."""
     account = Account()
     account.load_transaction_log(input_file)
     account.init_cash_flow()
     ctx.obj["account"] = account
 
 
-@cli.command()
+@cli.command(help='Calculation without conversion to PLN per asset.')
 @click.pass_context
 def foreign(ctx):
     account = ctx.obj['account']
@@ -282,7 +283,7 @@ def foreign(ctx):
     print(tabulate(account.get_foreign(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
 
-@cli.command()
+@cli.command(help='Calculation in PLN per asset (includes total).')
 @click.pass_context
 def pln(ctx):
     account = ctx.obj['account']
@@ -290,7 +291,7 @@ def pln(ctx):
     print(tabulate(account.get_pln(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
 
-@cli.command()
+@cli.command(help='Total calculation in PLN.')
 @click.pass_context
 def total(ctx):
     account = ctx.obj['account']
