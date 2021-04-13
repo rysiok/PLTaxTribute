@@ -103,18 +103,32 @@ def test_get_pln(account_real):
     assert t[0][2] == Decimal("115924.64"), "cost"
     assert t[0][3] == Decimal("-2078.65"), "P/L"
     assert t[0][4] == Decimal("46.66"), "commission"
+    assert t[0][1] - t[0][2] == t[0][3], "P/L"
 
     assert t[1][0] == 'PSLV.ARCA', "symbol"
     assert t[1][1] == Decimal("37.09"), "income"
     assert t[1][2] == Decimal("28.16"), "cost"
     assert t[1][3] == Decimal("8.93"), "P/L"
     assert t[1][4] == Decimal("0.14"), "commission"
+    assert t[1][1] - t[1][2] == t[1][3], "P/L"
 
     assert t[3][0] == 'TOTAL', "symbol"
     assert t[3][1] == Decimal("113883.08"), "income"
     assert t[3][2] == Decimal("115952.80"), "cost"
     assert t[3][3] == Decimal("-2069.72"), "P/L"
+    assert t[3][1] - t[3][2] == t[3][3], "P/L"
 
     assert t[0][1] + t[1][1] == Decimal("113883.08"), "income"
     assert t[0][2] + t[1][2] == Decimal("115952.80"), "cost"
     assert t[0][3] + t[1][3] == Decimal("-2069.72"), "P/L"
+
+
+def test_get_pln_total(account_real):
+    account, _ = account_real
+    t = account.get_pln_total()[1:]  # skip header
+    assert len(t) == 1
+    assert t[0][0] == Decimal("113883.08"), "income"
+    assert t[0][1] == Decimal("115952.80"), "cost"
+    assert t[0][2] == Decimal("-2069.72"), "P/L"
+    assert t[0][0] - t[0][1] == t[0][2], "P/L"
+
