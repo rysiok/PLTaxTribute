@@ -2,7 +2,6 @@
 
 # TODO:
 - refaktoring
-- testy jednostkowe
 - obsługa wielu plików z danymi
 - dodanie obslugi dywidend
 - podział na lata
