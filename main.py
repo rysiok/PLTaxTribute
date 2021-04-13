@@ -263,33 +263,40 @@ def ls(text: str):
     print("* " + text + "*" * (10 - len(text)))
 
 
-@click.command()
-@click.option('--action', type=click.Choice(['FOREIGN', 'PLN', 'TOTAL', 'ALL'], case_sensitive=False), default='TOTAL', help='What to calculate.')
-@click.option('--file', help='Transaction log file name.')
+@click.group(chain=True)
+@click.option('-i', '--input-file', required=True, help='Transaction log file name.')
+@click.pass_context
 # @click.option('--output', type=click.Choice(['TABLE', 'JSON'], case_sensitive=False), default='TABLE', help='Transaction log file name.')
-def main(action, file):
+def cli(ctx, input_file):
     account = Account()
-    account.load_transaction_log(file)
+    account.load_transaction_log(input_file)
     account.init_cash_flow()
+    ctx.obj["account"] = account
 
-    actions = {
-        'FOREIGN': account.get_foreign,
-        'PLN': account.get_pln,
-        'TOTAL': account.get_pln,
-        'ALL': lambda: None
-    }
-    table = actions[action]()
 
-    if table:
-        ls(action)
-        print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
-    else:  # ALL
-        for action, ftable in actions.items():
-            table = ftable()
-            if table:
-                ls(action)
-                print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+@cli.command()
+@click.pass_context
+def foreign(ctx):
+    account = ctx.obj['account']
+    ls("FOREIGN")
+    print(tabulate(account.get_foreign(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+
+
+@cli.command()
+@click.pass_context
+def pln(ctx):
+    account = ctx.obj['account']
+    ls("PLN")
+    print(tabulate(account.get_pln(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+
+
+@cli.command()
+@click.pass_context
+def total(ctx):
+    account = ctx.obj['account']
+    ls("TOTAL")
+    print(tabulate(account.get_pln_total(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
 
 if __name__ == '__main__':
-    main()
+    cli(obj={})
