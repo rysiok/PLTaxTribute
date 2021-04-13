@@ -1,7 +1,6 @@
 # exante_pl_tax
 
 # TODO:
-- refaktoring
 - obsługa wielu plików z danymi
 - dodanie obslugi dywidend
 - podział na lata
