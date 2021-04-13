@@ -214,6 +214,44 @@ class Account:
 
         nbp.save_cache()
 
+    def get_foregin(self):
+        table = [["symbol", "currency", "income", "cost", "P/L", "(commission)"]]
+        for symbol, cashflow in self.cashflows.items():
+            trade_income = sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+            trade_cost = -sum([cf.count * cf.price for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
+            commission_cost = -sum([cf.count * cf.price for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
+            assert sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.COMMISSION]) == 0, f"commission_cost != 0"
+
+            if cashflow:  # output only items with data
+                table.append([symbol, cashflow[0].currency, trade_income, trade_cost, trade_income - trade_cost - commission_cost, commission_cost])
+        return table
+
+    def get_pln(self):
+        table = [["symbol", "income", "cost", "P/L", "(commission)"]]
+        total_trade_income = 0
+        total_trade_cost = 0
+
+        for symbol, cashflow in self.cashflows.items():
+            trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+            trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
+            commission_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
+
+            if cashflow:  # output only items with data
+                table.append([symbol, trade_income, trade_cost, trade_income - trade_cost - commission_cost, commission_cost])
+                total_trade_income += trade_income
+                total_trade_cost += trade_cost + commission_cost
+
+        table.append(["-----"])
+        table.append(["TOTAL", total_trade_income, total_trade_cost, total_trade_income - total_trade_cost])
+        return table
+
+    def get_pln_total(self):
+        table = [["income", "cost", "P/L"]]
+        trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+        trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if cf.count < 0])
+        table.append([trade_income, trade_cost, trade_income - trade_cost])
+        return table
+
 
 def ls(text: str):
     text = text.strip() + " "
@@ -225,37 +263,12 @@ if __name__ == '__main__':
     account = Account()
     account.load_transaction_log(r"TR.csv")
     account.init_cash_flow()
-    cashflows = account.cashflows
 
     ls("FOREGIN")
-    table = [["symbol", "currency", "income", "cost", "commission", "P/L"]]
-    for symbol, cashflow in cashflows.items():
-        trade_income = sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-        trade_cost = -sum([cf.count * cf.price for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
-        commission_cost = -sum([cf.count * cf.price for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
-        assert sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.COMMISSION]) == 0, f"commission_cost != 0"
-
-        if cashflow:  # output only items with data
-            table.append([symbol, cashflow[0].currency, trade_income, trade_cost, commission_cost, trade_income - trade_cost - commission_cost])
-
-    print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+    print(tabulate(account.get_foregin(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
     ls("PLN")
-    table = [["symbol", "income", "cost", "commission", "P/L"]]
-    for symbol, cashflow in cashflows.items():
-        trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-        trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
-        commission_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
-
-        if cashflow:  # output only items with data
-            table.append([symbol, trade_income, trade_cost, commission_cost, trade_income - trade_cost - commission_cost])
-
-    print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
-
-    trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for key in cashflows for cf in cashflows[key] if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-    trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for key in cashflows for cf in cashflows[key] if cf.count < 0])
+    print(tabulate(account.get_pln(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
     ls("TOTAL PLN")
-    table = [["income", "cost", "P/L"]]
-    table.append([trade_income, trade_cost, trade_income - trade_cost])
-    print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+    print(tabulate(account.get_pln_total(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
