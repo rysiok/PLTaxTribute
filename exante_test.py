@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from main import NBP, Account
+from exante import NBP, Account
 
 test_cache_file = ".test_cache"
 
