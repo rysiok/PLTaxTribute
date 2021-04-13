@@ -2,6 +2,7 @@ import csv
 from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import Enum
+import click
 
 import requests
 import simplejson as json
@@ -148,8 +149,7 @@ class Account:
                 transaction = Transaction(row)
                 if transaction.type != TransactionType.STOCK:
                     print(bcolors.WARNING + "Unsupported transaction type. Only STOCK is supported.")
-                    print(transaction)
-                    print(bcolors.ENDC)
+                    print(f"{transaction}{bcolors.ENDC}")
                 else:
                     tr = self.transaction_log.get(transaction.symbol, [])
                     if not tr:
@@ -197,7 +197,8 @@ class Account:
                         cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -s.count, b.price, s.currency, pln))
                         ratio = Decimal(s.count / (s.count + b.count))
                         commission = round(b.commission * ratio, 2)
-                        cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, commission, s.currency, nbp.get_nbp_day_before(s.currency, s.time)))  # partial cost
+                        cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, commission, s.currency,
+                                                     nbp.get_nbp_day_before(s.currency, s.time)))  # partial cost
                         b.commission -= commission
                         break
                 if __debug__:
@@ -224,7 +225,8 @@ class Account:
             assert sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.COMMISSION]) == 0, f"commission_cost != 0"
 
             if cashflow:  # output only items with data
-                table.append([symbol, cashflow[0].currency, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost, commission_cost])
+                table.append(
+                    [symbol, cashflow[0].currency, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost, commission_cost])
         return table
 
     def get_pln(self):
@@ -238,7 +240,7 @@ class Account:
             commission_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
 
             if cashflow:  # output only items with data
-                table.append([symbol, trade_income, trade_cost+commission_cost, trade_income - trade_cost - commission_cost, commission_cost])
+                table.append([symbol, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost, commission_cost])
                 total_trade_income += trade_income
                 total_trade_cost += trade_cost + commission_cost
 
@@ -248,7 +250,8 @@ class Account:
 
     def get_pln_total(self):
         table = [["income", "cost", "P/L"]]
-        trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+        trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if
+                            cf.count > 0 and cf.type == CashFlowItemType.TRADE])
         trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if cf.count < 0])
         table.append([trade_income, trade_cost, trade_income - trade_cost])
         return table
@@ -260,16 +263,33 @@ def ls(text: str):
     print("* " + text + "*" * (10 - len(text)))
 
 
-if __name__ == '__main__':
+@click.command()
+@click.option('--action', type=click.Choice(['FOREIGN', 'PLN', 'TOTAL', 'ALL'], case_sensitive=False), default='TOTAL', help='What to calculate.')
+@click.option('--file', help='Transaction log file name.')
+# @click.option('--output', type=click.Choice(['TABLE', 'JSON'], case_sensitive=False), default='TABLE', help='Transaction log file name.')
+def main(action, file):
     account = Account()
-    account.load_transaction_log(r"TR.csv")
+    account.load_transaction_log(file)
     account.init_cash_flow()
 
-    ls("FOREIGN")
-    print(tabulate(account.get_foreign(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+    actions = {
+        'FOREIGN': account.get_foreign,
+        'PLN': account.get_pln,
+        'TOTAL': account.get_pln,
+        'ALL': lambda: None
+    }
+    table = actions[action]()
 
-    ls("PLN")
-    print(tabulate(account.get_pln(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+    if table:
+        ls(action)
+        print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+    else:  # ALL
+        for action, ftable in actions.items():
+            table = ftable()
+            if table:
+                ls(action)
+                print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
-    ls("TOTAL PLN")
-    print(tabulate(account.get_pln_total(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+
+if __name__ == '__main__':
+    main()
