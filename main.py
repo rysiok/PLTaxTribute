@@ -78,12 +78,13 @@ class Transaction:
 
 
 class CashFlowItem:
-    def __init__(self, type: CashFlowItemType, time: datetime, count: int, price: Decimal, currency: str = "USD"):
+    def __init__(self, type: CashFlowItemType, time: datetime, count: int, price: Decimal, currency: str,pln : Decimal):
         self.type = type
         self.time = time
         self.count = count
         self.price = price
         self.currency = currency
+        self.pln = pln
 
     def __repr__(self):
         return repr((
@@ -92,6 +93,7 @@ class CashFlowItem:
             self.count,
             self.price,
             self.currency,
+            self.pln
         ))
 
 
@@ -155,8 +157,10 @@ class Account:
                     tr.append(transaction)
 
     def init_cash_flow(self):
+        nbp = NBP()
+        nbp.load_cache()
+
         for symbol, tr in self.transaction_log.items():
-            # tr.sort(key=lambda x: x.time)
             tr.reverse()
 
             sell = [t for t in tr if t.side == TransactionSide.SELL]
@@ -166,8 +170,9 @@ class Account:
             if __debug__:
                 pl = 0
             for s in sell:
-                cashflow.append(CashFlowItem(CashFlowItemType.TRADE, s.time, s.count, s.price, s.currency))
-                cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, s.time, -1, s.commission, s.currency))
+                pln = nbp.get_nbp_day_before(s.currency, s.time)
+                cashflow.append(CashFlowItem(CashFlowItemType.TRADE, s.time, s.count, s.price, s.currency, pln))
+                cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, s.time, -1, s.commission, s.currency, pln))
                 if __debug__:
                     income = s.count * s.price
                     outcome = 0
@@ -175,20 +180,22 @@ class Account:
                 while s.count and buy:
                     b = buy[0]
                     b.count -= s.count
+                    pln = nbp.get_nbp_day_before(s.currency, b.time)
                     if b.count <= 0:
                         if __debug__:
                             outcome += (b.count + s.count) * b.price
-                        cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -(b.count + s.count), b.price, s.currency))
-                        cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, b.commission, s.currency))  # full cost
+                        cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -(b.count + s.count), b.price, s.currency, pln))
+                        cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, b.commission, s.currency, pln))  # full cost
                         s.count = -b.count  # left count
                         del buy[0]
                     else:
                         if __debug__:
                             outcome += s.count * b.price
-                        cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -s.count, b.price, s.currency))
+                        cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -s.count, b.price, s.currency, pln))
                         ratio = Decimal(s.count / (s.count + b.count))
-                        cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, round(b.commission * ratio, 2), s.currency))  # partial cost
-                        b.commission -= round(b.commission * ratio, 2)
+                        commission = round(b.commission * ratio, 2)
+                        cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, commission, s.currency, nbp.get_nbp_day_before(s.currency, s.time)))  # partial cost
+                        b.commission -= commission
                         break
                 if __debug__:
                     pl = pl + income - outcome
@@ -203,6 +210,8 @@ class Account:
                 if pl != trade_income - trade_cost:
                     raise Exception(f"PL doesn't math for symbol {symbol}")
 
+        nbp.save_cache()
+
 
 def ls(text: str):
     text = text.strip() + " "
@@ -211,8 +220,6 @@ def ls(text: str):
 
 
 if __name__ == '__main__':
-    nbp = NBP()
-    nbp.load_cache()
     account = Account()
     account.load_transaction_log(r"TR.csv")
     account.init_cash_flow()
@@ -234,21 +241,20 @@ if __name__ == '__main__':
     ls("PLN")
     table = [["symbol", "income", "cost", "commission", "P/L"]]
     for symbol, cashflow in cashflows.items():
-        trade_income = sum([round(cf.count * cf.price * nbp.get_nbp_day_before(cf.currency, cf.time), 2) for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-        trade_cost = -sum([round(cf.count * cf.price * nbp.get_nbp_day_before(cf.currency, cf.time), 2) for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
-        commission_cost = -sum([round(cf.count * cf.price * nbp.get_nbp_day_before(cf.currency, cf.time), 2) for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
+        trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+        trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
+        commission_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
 
         if cashflow:  # output only items with data
             table.append([symbol, trade_income, trade_cost, commission_cost, trade_income - trade_cost - commission_cost])
 
     print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
-    trade_income = sum([round(cf.count * cf.price * nbp.get_nbp_day_before(cf.currency, cf.time), 2) for key in cashflows for cf in cashflows[key] if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-    trade_cost = -sum([round(cf.count * cf.price * nbp.get_nbp_day_before(cf.currency, cf.time), 2) for key in cashflows for cf in cashflows[key] if cf.count < 0])
+    trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for key in cashflows for cf in cashflows[key] if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+    trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for key in cashflows for cf in cashflows[key] if cf.count < 0])
 
     ls("TOTAL PLN")
     table = [["income", "cost", "P/L"]]
     table.append([trade_income, trade_cost, trade_income - trade_cost])
     print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
-    nbp.save_cache()

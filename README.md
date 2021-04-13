@@ -1,9 +1,8 @@
 # exante_pl_tax
 
 # TODO:
-- tylko akcje
+- ostrzeżenie o sprzedaży bez zakupu
 - refaktoring
-- liczenie na bieżąco w PLN przy przegladzie danych
 - testy jednostkowe
 - obsługa wielu plików z danymi
 - dodanie obslugi dywidend
