@@ -136,8 +136,9 @@ class NBP:
 
 
 class Account:
-    cashflows = {}
-    transaction_log = {}
+    def __init__(self):
+        self.cashflows = {}
+        self.transaction_log = {}
 
     def load_transaction_log(self, file):
         with open(file, newline='', encoding="utf-16") as csvfile:
@@ -214,7 +215,7 @@ class Account:
 
         nbp.save_cache()
 
-    def get_foregin(self):
+    def get_foreign(self):
         table = [["symbol", "currency", "income", "cost", "P/L", "(commission)"]]
         for symbol, cashflow in self.cashflows.items():
             trade_income = sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
@@ -223,7 +224,7 @@ class Account:
             assert sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.COMMISSION]) == 0, f"commission_cost != 0"
 
             if cashflow:  # output only items with data
-                table.append([symbol, cashflow[0].currency, trade_income, trade_cost, trade_income - trade_cost - commission_cost, commission_cost])
+                table.append([symbol, cashflow[0].currency, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost, commission_cost])
         return table
 
     def get_pln(self):
@@ -237,7 +238,7 @@ class Account:
             commission_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
 
             if cashflow:  # output only items with data
-                table.append([symbol, trade_income, trade_cost, trade_income - trade_cost - commission_cost, commission_cost])
+                table.append([symbol, trade_income, trade_cost+commission_cost, trade_income - trade_cost - commission_cost, commission_cost])
                 total_trade_income += trade_income
                 total_trade_cost += trade_cost + commission_cost
 
@@ -264,8 +265,8 @@ if __name__ == '__main__':
     account.load_transaction_log(r"TR.csv")
     account.init_cash_flow()
 
-    ls("FOREGIN")
-    print(tabulate(account.get_foregin(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+    ls("FOREIGN")
+    print(tabulate(account.get_foreign(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
     ls("PLN")
     print(tabulate(account.get_pln(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))

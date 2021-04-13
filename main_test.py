@@ -24,6 +24,14 @@ def nbp_real():
     return NBP(".test_real_cache")
 
 
+@pytest.fixture
+def account_real(capfd, nbp_real):
+    account = Account()
+    account.load_transaction_log(r"TR.csv")
+    account.init_cash_flow(nbp_real)
+    return account, capfd.readouterr().out
+
+
 def test_save_load_cache(nbp: NBP):
     cache_key = "2000-01-05 GBP"
     cache_value = 7.77
@@ -55,16 +63,58 @@ def test_load_transaction_log(capfd, nbp):
     assert "'UNSUPPORTED'" in captured.out
 
 
-def test_init_cash_flow(capfd, nbp_real):
-    account = Account()
-    account.load_transaction_log(r"TR.csv")
-    account.init_cash_flow(nbp_real)
+def test_init_cash_flow(account_real):
+    account, out = account_real
     cf = account.cashflows
-    captured = capfd.readouterr()
-    assert "No BUY transactions for symbol: TestNoBuy." in captured.out
+    assert "No BUY transactions for symbol: TestNoBuy." in out
     assert len(cf) == 5
     assert len(cf['TLT.NASDAQ']) == 0
     assert len(cf['FXF.ARCA']) == 16
     assert len(cf['PSLV.ARCA']) == 4
     assert len(cf['GDXJ.ARCA']) == 0
     assert len(cf['ZSIL.SIX']) == 0
+
+
+def test_get_foreign(account_real):
+    account, _ = account_real
+    t = account.get_foreign()[1:]  # skip header
+    assert len(t) == 2
+    assert t[0][0] == 'FXF.ARCA', "symbol"
+    assert t[0][2] == Decimal("29726.63"), "income"
+    assert t[0][3] == Decimal("29546.73"), "cost"
+    assert t[0][4] == Decimal("179.90"), "P/L"
+    assert t[0][5] == Decimal("12.04"), "commission"
+    assert t[0][2] - t[0][3] == Decimal("179.90"), "P/L"
+
+    assert t[1][0] == 'PSLV.ARCA', "symbol"
+    assert t[1][2] == Decimal("9.96"), "income"
+    assert t[1][3] == Decimal("7.12"), "cost"
+    assert t[1][4] == Decimal("2.84"), "P/L"
+    assert t[1][5] == Decimal("0.04"), "commission"
+    assert t[1][2] - t[1][3] == Decimal("2.84"), "P/L"
+
+
+def test_get_pln(account_real):
+    account, _ = account_real
+    t = account.get_pln()[1:]  # skip header
+    assert len(t) == 4
+    assert t[0][0] == 'FXF.ARCA', "symbol"
+    assert t[0][1] == Decimal("113845.99"), "income"
+    assert t[0][2] == Decimal("115924.64"), "cost"
+    assert t[0][3] == Decimal("-2078.65"), "P/L"
+    assert t[0][4] == Decimal("46.66"), "commission"
+
+    assert t[1][0] == 'PSLV.ARCA', "symbol"
+    assert t[1][1] == Decimal("37.09"), "income"
+    assert t[1][2] == Decimal("28.16"), "cost"
+    assert t[1][3] == Decimal("8.93"), "P/L"
+    assert t[1][4] == Decimal("0.14"), "commission"
+
+    assert t[3][0] == 'TOTAL', "symbol"
+    assert t[3][1] == Decimal("113883.08"), "income"
+    assert t[3][2] == Decimal("115952.80"), "cost"
+    assert t[3][3] == Decimal("-2069.72"), "P/L"
+
+    assert t[0][1] + t[1][1] == Decimal("113883.08"), "income"
+    assert t[0][2] + t[1][2] == Decimal("115952.80"), "cost"
+    assert t[0][3] + t[1][3] == Decimal("-2069.72"), "P/L"
