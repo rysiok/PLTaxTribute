@@ -1,3 +1,5 @@
+import simplejson as json
+
 from tabulate import tabulate
 import csv
 import requests
@@ -7,28 +9,26 @@ from decimal import Decimal
 from enum import Enum
 
 
-# saves cache to file
-def save_cache(filename, CACHE):
-    try:
-        with open(filename, "wb") as f:
-            pickle.dump(CACHE, f)
-    except OSError:
-        pass
-
-
-# loads cache from file
-# unsafe, don't relay on external cache
-def load_cache(filename):
-    try:
-        with open(filename, "rb") as f:
-            return pickle.load(f)
-    except OSError:
-        return {}
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
 
 
 class TransactionSide(Enum):
     BUY = 1
     SELL = 2
+
+
+class TransactionType(Enum):
+    STOCK = 1
+    UNSUPPORTED = 99
 
 
 class CashFlowItemType(Enum):
@@ -47,33 +47,26 @@ class Column:
     COUNT = 8
     COMMISSION = 9
     VOLUME = 12
+    TYPE = 5
 
 
 class Transaction:
 
-    def __init__(self, time: datetime, side: TransactionSide, price: Decimal, currency: str, count: int, commission: Decimal, volume: Decimal):
-        self.time = time
-        self.side = side
-        self.price = price
-        self.currency = currency
-        self.count = count
-        self.commission = commission
-        self.volume = volume
-
-    @staticmethod
-    def from_cvs_row(csv_row):
-        return Transaction(datetime.fromisoformat(csv_row[Column.TIME]),
-                           TransactionSide.BUY if csv_row[Column.SIDE] == "buy" else TransactionSide.SELL,
-                           Decimal(csv_row[Column.PRICE]), row[Column.CURRENCY], int(csv_row[Column.COUNT]), Decimal(csv_row[Column.COMMISSION]),
-                           Decimal(csv_row[Column.VOLUME])
-                           )
-
-    @staticmethod
-    def get_symbol(csv_row):
-        return csv_row[Column.SYMBOL]
+    def __init__(self, csv_row):
+        self.time = datetime.fromisoformat(csv_row[Column.TIME])
+        self.side = TransactionSide.BUY if csv_row[Column.SIDE] == "buy" else TransactionSide.SELL
+        self.price = Decimal(csv_row[Column.PRICE])
+        self.currency = csv_row[Column.CURRENCY]
+        self.count = int(csv_row[Column.COUNT])
+        self.commission = Decimal(csv_row[Column.COMMISSION])
+        self.volume = Decimal(csv_row[Column.VOLUME])
+        self.symbol = csv_row[Column.SYMBOL]
+        self.type = TransactionType.STOCK if csv_row[Column.TYPE] == "STOCK" else TransactionType.UNSUPPORTED
 
     def __repr__(self):
         return repr((
+            self.symbol,
+            self.type.name,
             self.time,
             self.side.name,
             self.price,
@@ -102,30 +95,67 @@ class CashFlowItem:
         ))
 
 
-def get_nbp_day_before(currency: str, date: datetime):
-    date = date.date()
-    exchange_date = date - timedelta(days=1)
+class NBP:
+    cache = {}
 
-    if 'NBP' not in CACHE:
-        CACHE['NBP'] = {}
-    if (currency, date) in CACHE['NBP']:
-        return CACHE['NBP'][(currency, date)]
+    def __init__(self, cache_file: str = ".cache"):
+        self.cache_file = cache_file
 
-    while True:
+    def save_cache(self):
         try:
+            with open(self.cache_file, "w") as f:
+                json.dump(self.cache, f)
+        except OSError:
+            pass
+
+    def load_cache(self):
+        try:
+            with open(self.cache_file, "rb") as f:
+                self.cache = {k: round(Decimal(v), 4) for k, v in json.load(f).items()}
+        except OSError:
+            pass
+
+    def get_nbp_day_before(self, currency: str, date: datetime):
+        date = date.date()
+        exchange_date = date - timedelta(days=1)
+
+        hash = f"{date} {currency}"
+
+        hit = self.cache.get(hash, None)
+        if hit:
+            return hit
+
+        while True:
             response = requests.get(r"https://api.nbp.pl/api/exchangerates/rates/a/%s/%s?format=json" % (currency, exchange_date))
-            data = round(Decimal(response.json()["rates"][0]["mid"]), 4)
-            CACHE['NBP'][(currency, date)] = data
-            return data
-        except:
+            if response.status_code == 200:
+                data = round(Decimal(response.json()["rates"][0]["mid"]), 4)
+                self.cache[hash] = data
+                return data
             exchange_date = exchange_date - timedelta(days=1)
 
 
 class Account:
     cashflows = {}
+    transaction_log = {}
 
-    def init_cash_flow(self, transaction_log):
-        for symbol, tr in transaction_log.items():
+    def load_transaction_log(self, file):
+        with open(file, newline='', encoding="utf-16") as csvfile:
+            reader = csv.reader(csvfile, delimiter='\t')
+            next(reader, None)  # skip header
+            for row in reader:
+                transaction = Transaction(row)
+                if transaction.type != TransactionType.STOCK:
+                    print(bcolors.WARNING + "Unsupported transaction type. Only STOCK is supported.")
+                    print(transaction)
+                    print(bcolors.ENDC)
+                else:
+                    tr = self.transaction_log.get(transaction.symbol, [])
+                    if not tr:
+                        self.transaction_log[transaction.symbol] = tr
+                    tr.append(transaction)
+
+    def init_cash_flow(self):
+        for symbol, tr in self.transaction_log.items():
             # tr.sort(key=lambda x: x.time)
             tr.reverse()
 
@@ -177,27 +207,15 @@ class Account:
 def ls(text: str):
     text = text.strip() + " "
     print()
-    #print("-" * (120 + 2))
     print("* " + text + "*" * (10 - len(text)))
 
 
-# Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    CACHE = load_cache(".cache")
+    nbp = NBP()
+    nbp.load_cache()
     account = Account()
-    transaction_log = {}
-    with open(r"TR.csv", newline='', encoding="utf-16") as csvfile:
-        reader = csv.reader(csvfile, delimiter='\t')
-        next(reader, None)
-        for row in reader:
-            symbol = Transaction.get_symbol(row)
-            tr = transaction_log.get(symbol, None)
-            if not tr:
-                transaction_log[symbol] = []
-                tr = transaction_log[symbol]
-            tr.append(Transaction.from_cvs_row(row))
-
-    account.init_cash_flow(transaction_log)
+    account.load_transaction_log(r"TR.csv")
+    account.init_cash_flow()
     cashflows = account.cashflows
 
     ls("FOREGIN")
@@ -216,21 +234,21 @@ if __name__ == '__main__':
     ls("PLN")
     table = [["symbol", "income", "cost", "commission", "P/L"]]
     for symbol, cashflow in cashflows.items():
-        trade_income = sum([round(cf.count * cf.price * get_nbp_day_before(cf.currency, cf.time), 2) for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-        trade_cost = -sum([round(cf.count * cf.price * get_nbp_day_before(cf.currency, cf.time), 2) for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
-        commission_cost = -sum([round(cf.count * cf.price * get_nbp_day_before(cf.currency, cf.time), 2) for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
+        trade_income = sum([round(cf.count * cf.price * nbp.get_nbp_day_before(cf.currency, cf.time), 2) for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+        trade_cost = -sum([round(cf.count * cf.price * nbp.get_nbp_day_before(cf.currency, cf.time), 2) for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
+        commission_cost = -sum([round(cf.count * cf.price * nbp.get_nbp_day_before(cf.currency, cf.time), 2) for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
 
         if cashflow:  # output only items with data
             table.append([symbol, trade_income, trade_cost, commission_cost, trade_income - trade_cost - commission_cost])
 
     print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
-    trade_income = sum([round(cf.count * cf.price * get_nbp_day_before(cf.currency, cf.time), 2) for key in cashflows for cf in cashflows[key] if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-    trade_cost = -sum([round(cf.count * cf.price * get_nbp_day_before(cf.currency, cf.time), 2) for key in cashflows for cf in cashflows[key] if cf.count < 0])
+    trade_income = sum([round(cf.count * cf.price * nbp.get_nbp_day_before(cf.currency, cf.time), 2) for key in cashflows for cf in cashflows[key] if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+    trade_cost = -sum([round(cf.count * cf.price * nbp.get_nbp_day_before(cf.currency, cf.time), 2) for key in cashflows for cf in cashflows[key] if cf.count < 0])
 
     ls("TOTAL PLN")
     table = [["income", "cost", "P/L"]]
     table.append([trade_income, trade_cost, trade_income - trade_cost])
     print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
-    save_cache(".cache", CACHE)
+    nbp.save_cache()
