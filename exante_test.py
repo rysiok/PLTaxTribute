@@ -58,8 +58,7 @@ def test_load_transaction_log(capfd, nbp):
     account = Account()
     account.load_transaction_log(r"TR.csv")
     captured = capfd.readouterr()
-    assert "Unsupported transaction type. Only TRADE are supported." in captured.out
-    assert "DIVIDEND" in captured.out
+    assert "Unsupported transaction type AUTOCONVERSION." in captured.out
 
 
 def test_init_cash_flow(account_real):
@@ -67,10 +66,10 @@ def test_init_cash_flow(account_real):
     cf = account.cashflows
     assert "No BUY transactions for symbol: TestNoBuyFXF.ARCA." in out
     assert len(cf) == 5
-    assert len(cf['TLT.NASDAQ']) == 0
+    assert len(cf['TLT.NASDAQ']) == 2
     assert len(cf['FXF.ARCA']) == 16
     assert len(cf['PSLV.ARCA']) == 4
-    assert len(cf['GDXJ.ARCA']) == 0
+    assert len(cf['GDXJ.ARCA']) == 2
     assert len(cf['ZSIL.SIX']) == 0
 
 
@@ -131,3 +130,31 @@ def test_get_pln_total(account_real):
     assert t[0][2] == Decimal("-2069.72"), "P/L"
     assert t[0][0] - t[0][1] == t[0][2], "P/L"
 
+def test_dividends(account_real):
+    account, _ = account_real
+    t = account.get_dividends()[1:]  # skip header
+    assert len(t) == 2
+    assert t[0][0] == 'GDXJ.ARCA', "symbol"
+    assert t[0][2] == Decimal("3.42"), "income"
+    assert t[0][3] == Decimal("0.52"), "tax"
+    assert t[0][4] == Decimal("15"), "%"
+    assert round(t[0][3]/t[0][2]*100) == Decimal("15"), "%"
+
+    assert t[1][0] == 'TLT.NASDAQ', "symbol"
+    assert t[1][2] == Decimal("15.57"), "income"
+    assert t[1][3] == Decimal("2.34"), "tax"
+    assert t[1][4] == Decimal("15"), "%"
+    assert round(t[1][3]/t[1][2]*100) == Decimal("15"), "%"
+
+def test_dividends_pln(account_real):
+    account, _ = account_real
+    t = account.get_dividends_pln()[1:]  # skip header
+    assert len(t) == 1
+    assert t[0][0] == Decimal("68.99"), "income"
+    assert t[0][1] == Decimal("10.39 "), "paid tax "
+    assert t[0][2] == Decimal("15"), "%"
+    assert round(t[0][1]/t[0][0]*100) == Decimal("15"), "%"
+    assert t[0][3] == Decimal("13.11"), "total to pay"
+    assert t[0][4] == Decimal("3"), "left to pay"
+    assert round(t[0][0]*Decimal("0.19"), 2) == Decimal("13.11"), "total to pay"
+    assert round(round(t[0][0]*Decimal("0.19"), 2)-t[0][1]) == Decimal("3"), "left to pay"

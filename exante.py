@@ -24,12 +24,15 @@ class bcolors:
 class TransactionSide(Enum):
     BUY = 1
     SELL = 2
+    DIVIDEND = 3
 
 
 class CashFlowItemType(Enum):
     COMMISSION = 1
     TRADE = 2
     PL = 3
+    DIVIDEND = 4
+    TAX = 5
 
 
 # exante transaction log column positions
@@ -44,15 +47,78 @@ class Column:
     COMMENT = 10
 
 
-class TradeTransaction:
-    def __init__(self, time: datetime, side: TransactionSide, price: Decimal, currency: str, count: int, commission: Decimal, symbol: str):
+class Transaction:
+    def __init__(self, time: datetime, side: TransactionSide, symbol: str):
         self.time = time
         self.side = side
+        self.symbol = symbol
+
+    @staticmethod
+    def parse(row: dict, log: dict):
+        op_type = row[Column.OP_TYPE]
+        supported_op_types = ("TRADE", "COMMISSION", "DIVIDEND", "TAX")
+
+        if op_type == "FUNDING/WITHDRAWAL":
+            return
+
+        if op_type not in supported_op_types:
+            print(f"{bcolors.WARNING}Unsupported transaction type {op_type}.{bcolors.ENDC}")
+            return
+
+        time = datetime.fromisoformat(row[Column.TIME])
+        isin = row[Column.ISIN]
+        asset = row[Column.ASSET]
+        symbol = row[Column.SYMBOL]
+
+        # count, side for TradeTransaction
+        if op_type == "TRADE" and isin != "None" and asset == symbol:
+            count = int(row[Column.SUM])
+            side = TransactionSide.BUY if count > 0 else TransactionSide.SELL
+            count = abs(count)
+            log_item = TradeTransaction(time=time, side=side, count=count, symbol=symbol)
+            log[symbol] = [log_item] if symbol not in log.keys() else log[symbol] + [log_item]
+            return
+
+        if op_type == "DIVIDEND":
+            value = Decimal(row[Column.SUM])
+            log_item = DividendTransaction(time=time, value=value, symbol=symbol, currency=asset)
+            log[symbol] = [log_item] if symbol not in log.keys() else log[symbol] + [log_item]
+            return
+
+        # another row of transaction object
+        last_log_item = log[symbol][-1]
+
+        if isin == "None" and last_log_item.time == time and last_log_item.symbol == symbol:
+            # price, currency for last TradeTransaction
+            if op_type == "TRADE":
+                last_log_item.price = abs(Decimal(row[Column.SUM]) / last_log_item.count)
+                last_log_item.currency = asset
+                return
+            # commission for last TradeTransaction
+            if op_type == "COMMISSION":
+                last_log_item.commission = abs(Decimal(row[Column.SUM]))
+                return
+        # tax for DividendTransaction
+        if op_type == "TAX":
+            last_log_item.tax = abs(Decimal(row[Column.SUM]))
+            return
+
+
+class TradeTransaction(Transaction):
+    def __init__(self, time: datetime, side: TransactionSide, symbol: str, count: int, price: Decimal = None, currency: str = None, commission: Decimal = None):
+        super().__init__(time, side, symbol)
         self.price = price
         self.currency = currency
         self.count = count
         self.commission = commission
-        self.symbol = symbol
+
+
+class DividendTransaction(Transaction):
+    def __init__(self, time: datetime, symbol: str, value: Decimal, currency: str, tax: Decimal = None):
+        super().__init__(time, TransactionSide.DIVIDEND, symbol)
+        self.value = value
+        self.tax = tax
+        self.currency = currency
 
 
 class CashFlowItem:
@@ -63,16 +129,6 @@ class CashFlowItem:
         self.price = price
         self.currency = currency
         self.pln = pln
-
-    def __repr__(self):
-        return repr((
-            self.type.name,
-            self.time,
-            self.count,
-            self.price,
-            self.currency,
-            self.pln
-        ))
 
 
 class NBP:
@@ -114,49 +170,6 @@ class NBP:
             exchange_date = exchange_date - timedelta(days=1)
 
 
-class Transaction:
-    @staticmethod
-    def parse(row: dict, log: dict):
-        op_type = row[Column.OP_TYPE]
-        supported_op_types = ("TRADE", "COMMISSION")
-
-        if op_type == "FUNDING/WITHDRAWAL":
-            return
-
-        if op_type not in supported_op_types:
-            print(bcolors.WARNING + "Unsupported transaction type. Only TRADE are supported.")
-            print(f"{op_type}{bcolors.ENDC}")
-            return
-
-
-        time = datetime.fromisoformat(row[Column.TIME])
-        isin = row[Column.ISIN]
-        asset = row[Column.ASSET]
-        symbol = row[Column.SYMBOL]
-
-        # count, side for TradeTransaction
-        if op_type == "TRADE" and isin != "None" and asset == symbol:
-            count = int(row[Column.SUM])
-            side = TransactionSide.BUY if count > 0 else TransactionSide.SELL
-            count = abs(count)
-            log_item = TradeTransaction(time, side, None, None, count, None, symbol)
-            log[symbol] = [log_item] if symbol not in log.keys() else log[symbol] + [log_item]
-            return
-        last_log_item = log[symbol][-1]
-
-        if isin == "None" and last_log_item.time == time and last_log_item.symbol == symbol:
-            # price, currency for last TradeTransaction
-            if op_type == "TRADE":
-                last_log_item.price = abs(Decimal(row[Column.SUM]) / last_log_item.count)
-                last_log_item.currency = asset
-                return
-            # commission for last TradeTransaction
-            if op_type == "COMMISSION":
-                last_log_item.commission = abs(Decimal(row[Column.SUM]))
-                return
-
-
-
 class Account:
     def __init__(self):
         self.cashflows = {}
@@ -177,6 +190,7 @@ class Account:
         for symbol, tr in self.transaction_log.items():
             sell = [t for t in tr if t.side == TransactionSide.SELL]
             buy = [t for t in tr if t.side == TransactionSide.BUY]
+            dividend = [t for t in tr if t.side == TransactionSide.DIVIDEND]
 
             if not buy:
                 print(f"{bcolors.WARNING}No BUY transactions for symbol: {symbol}.{bcolors.ENDC}")
@@ -205,6 +219,11 @@ class Account:
                                                      nbp.get_nbp_day_before(s.currency, s.time)))  # partial cost
                         b.commission -= commission
                         break
+            for d in dividend:
+                pln = nbp.get_nbp_day_before(d.currency, d.time)
+                cashflow.append(CashFlowItem(CashFlowItemType.DIVIDEND, d.time, 1, d.value, d.currency, pln))
+                cashflow.append(CashFlowItem(CashFlowItemType.TAX, d.time, 1, d.tax, d.currency, pln))
+
             self.cashflows[symbol] = cashflow
 
         nbp.save_cache()
@@ -212,14 +231,15 @@ class Account:
     def get_foreign(self):
         table = [["symbol", "currency", "income", "cost", "P/L", "(commission)"]]
         for symbol, cashflow in self.cashflows.items():
-            trade_income = sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-            trade_cost = -sum([cf.count * cf.price for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
-            commission_cost = -sum([cf.count * cf.price for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
-            assert sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.COMMISSION]) == 0, f"commission_cost != 0"
-
             if cashflow:  # output only items with data
-                table.append(
-                    [symbol, cashflow[0].currency, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost, commission_cost])
+                trade_income = sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+                if trade_income:
+                    trade_cost = -sum([cf.count * cf.price for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
+                    commission_cost = -sum([cf.count * cf.price for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
+                    assert sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.COMMISSION]) == 0, f"commission_cost != 0"
+
+                    table.append(
+                        [symbol, cashflow[0].currency, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost, commission_cost])
         return table
 
     def get_pln(self):
@@ -228,14 +248,15 @@ class Account:
         total_trade_cost = 0
 
         for symbol, cashflow in self.cashflows.items():
-            trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-            trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
-            commission_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
-
             if cashflow:  # output only items with data
-                table.append([symbol, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost, commission_cost])
-                total_trade_income += trade_income
-                total_trade_cost += trade_cost + commission_cost
+                trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+                if trade_income:
+                    trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
+                    commission_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
+
+                    table.append([symbol, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost, commission_cost])
+                    total_trade_income += trade_income
+                    total_trade_cost += trade_cost + commission_cost
 
         table.append(["-----"])
         table.append(["TOTAL", total_trade_income, total_trade_cost, total_trade_income - total_trade_cost])
@@ -247,6 +268,28 @@ class Account:
                             cf.count > 0 and cf.type == CashFlowItemType.TRADE])
         trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if cf.count < 0])
         table.append([trade_income, trade_cost, trade_income - trade_cost])
+        return table
+
+    def get_dividends(self):
+        table = [["symbol", "currency", "income", "paid tax", "%"]]
+        for symbol, cashflow in self.cashflows.items():
+            if cashflow:  # output only items with data
+                income = sum([cf.price for cf in cashflow if cf.type == CashFlowItemType.DIVIDEND])
+                tax = sum([cf.price for cf in cashflow if cf.type == CashFlowItemType.TAX])
+                if income > 0:
+                    percent = round(tax / income * 100)
+                    table.append([symbol, cashflow[0].currency, income, tax, percent])
+        return table
+
+    def get_dividends_pln(self):
+        table = [["income", "paid tax\r[PIT38 G45]", "%", "total to pay (19%)\r[PIT38 G46]", "left to pay (19%)\r[PIT38 G47]"]]
+        income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if cf.type == CashFlowItemType.DIVIDEND])
+        paid_tax = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if cf.type == CashFlowItemType.TAX])
+        if income > 0:
+            percent = round(paid_tax / income * 100)
+            tax = round(income * Decimal("0.19"), 2)
+            left_to_pay = round(tax-paid_tax)
+            table.append([income, paid_tax, percent, tax, left_to_pay])
         return table
 
 
@@ -261,14 +304,14 @@ def ls(text: str):
 @click.pass_context
 # @click.option('--output', type=click.Choice(['TABLE', 'JSON'], case_sensitive=False), default='TABLE', help='Transaction log file name.')
 def cli(ctx, input_file):
-    """This script Calculates income and cost from Exante transaction log, using FIFO approach and D-1 NBP PLN exchange rate."""
+    """This script calculates trade income, cost, dividends and paid tax from Exante transaction log, using FIFO approach and D-1 NBP PLN exchange rate."""
     account = Account()
     account.load_transaction_log(input_file)
     account.init_cash_flow()
     ctx.obj["account"] = account
 
 
-@cli.command(help='Calculation without conversion to PLN per asset.')
+@cli.command(help='Trade income/cost without conversion to PLN per asset.')
 @click.pass_context
 def foreign(ctx):
     account = ctx.obj['account']
@@ -276,7 +319,7 @@ def foreign(ctx):
     print(tabulate(account.get_foreign(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
 
-@cli.command(help='Calculation in PLN per asset (includes total).')
+@cli.command(help='Trade income/cost in PLN per asset (includes total).')
 @click.pass_context
 def pln(ctx):
     account = ctx.obj['account']
@@ -284,12 +327,36 @@ def pln(ctx):
     print(tabulate(account.get_pln(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
 
-@cli.command(help='Total calculation in PLN.')
+@cli.command(help='Total trade income/cost in PLN.')
 @click.pass_context
 def total(ctx):
     account = ctx.obj['account']
-    ls("TOTAL")
+    ls("TOTAL PLN")
     print(tabulate(account.get_pln_total(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+
+
+@cli.command(help='Dividend and paid tax witohut conversion to PLN per asset.')
+@click.pass_context
+def dividend(ctx):
+    account = ctx.obj['account']
+    ls("FOREIGN DIVIDEND")
+    print(tabulate(account.get_dividends(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+
+@cli.command(help='Dividend and paid tax in PLN.')
+@click.pass_context
+def dividend_pln(ctx):
+    """
+        Kwotę należnego podatku wpisuje do pola o enigmatycznej nazwie „Zryczałtowany podatek obliczony od przychodów (dochodów), o których mowa w art. 30a ust. 1 pkt 1–5 ustawy, uzyskanych poza granicami Rzeczypospolitej Polskiej”.
+        Kwotę podatku pobranego za granicą wpisujemy do pola „Podatek zapłacony za granicą, o którym mowa w art. 30a ust. 9 ustawy”.
+
+        2019
+        W PIT-36 – pola 355, 356, 357 i 358 w sekcji N.
+        W PIT-36L – pola 115 i 116 w sekcji K.
+        W PIT-38 – pola 45 i 46 w sekcji G.
+    """
+    account = ctx.obj['account']
+    ls("PLN DIVIDEND")
+    print(tabulate(account.get_dividends_pln(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
 
 if __name__ == '__main__':
