@@ -116,25 +116,45 @@ class NBP:
 
 class Transaction:
     @staticmethod
-    def parse(csv_rows: list):
-        op_type = csv_rows[0][Column.OP_TYPE]
-        if op_type == "TRADE":
-            time = datetime.fromisoformat(csv_rows[0][Column.TIME])
-            count = int(csv_rows[0][Column.SUM])
-            side = TransactionSide.BUY if count > 0 else TransactionSide.SELL
-            price = abs(Decimal(csv_rows[1][Column.SUM]) / count)
-            count = abs(count)
-            commission = abs(Decimal(csv_rows[2][Column.SUM]))
-            currency = csv_rows[1][Column.ASSET]
-            symbol = csv_rows[0][Column.ASSET]
+    def parse(row: dict, log: dict):
+        op_type = row[Column.OP_TYPE]
+        supported_op_types = ("TRADE", "COMMISSION")
 
-            return TradeTransaction(time, side, price, currency, count, commission, symbol)
         if op_type == "FUNDING/WITHDRAWAL":
-            return None
+            return
 
-        print(bcolors.WARNING + "Unsupported transaction type. Only TRADE are supported.")
-        print(f"{op_type}{bcolors.ENDC}")
-        return None
+        if op_type not in supported_op_types:
+            print(bcolors.WARNING + "Unsupported transaction type. Only TRADE are supported.")
+            print(f"{op_type}{bcolors.ENDC}")
+            return
+
+
+        time = datetime.fromisoformat(row[Column.TIME])
+        isin = row[Column.ISIN]
+        asset = row[Column.ASSET]
+        symbol = row[Column.SYMBOL]
+
+        # count, side for TradeTransaction
+        if op_type == "TRADE" and isin != "None" and asset == symbol:
+            count = int(row[Column.SUM])
+            side = TransactionSide.BUY if count > 0 else TransactionSide.SELL
+            count = abs(count)
+            log_item = TradeTransaction(time, side, None, None, count, None, symbol)
+            log[symbol] = [log_item] if symbol not in log.keys() else log[symbol] + [log_item]
+            return
+        last_log_item = log[symbol][-1]
+
+        if isin == "None" and last_log_item.time == time and last_log_item.symbol == symbol:
+            # price, currency for last TradeTransaction
+            if op_type == "TRADE":
+                last_log_item.price = abs(Decimal(row[Column.SUM]) / last_log_item.count)
+                last_log_item.currency = asset
+                return
+            # commission for last TradeTransaction
+            if op_type == "COMMISSION":
+                last_log_item.commission = abs(Decimal(row[Column.SUM]))
+                return
+
 
 
 class Account:
@@ -143,25 +163,13 @@ class Account:
         self.transaction_log = {}
 
     def load_transaction_log(self, file):
-        rows = []
         with open(file, newline='', encoding="utf-16") as csvfile:
             reader = csv.reader(csvfile, delimiter='\t')
             next(reader, None)  # skip header
             rows = [row for row in reader]
         rows.sort(key=lambda i: i[Column.ID])
-        group_by_time_log = {}
-        for row in rows:  # group transaction by time
-            time = datetime.fromisoformat(row[Column.TIME])
-            # TODO: implement group by year
-            if time.date().year != 2020:
-                continue
-            group_by_time_log[time] = [row] if time not in group_by_time_log.keys() else group_by_time_log[time] + [row]
-
-        for v in group_by_time_log.values():  # parse rows groupped by time
-            transaction_log_item = Transaction.parse(v)
-            if transaction_log_item:
-                s = transaction_log_item.symbol
-                self.transaction_log[s] = [transaction_log_item] if s not in self.transaction_log.keys() else self.transaction_log[s] + [transaction_log_item]
+        for row in rows:
+            Transaction.parse(row, self.transaction_log)
 
     def init_cash_flow(self, nbp=NBP()):
         nbp.load_cache()

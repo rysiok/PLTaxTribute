@@ -65,7 +65,7 @@ def test_load_transaction_log(capfd, nbp):
 def test_init_cash_flow(account_real):
     account, out = account_real
     cf = account.cashflows
-    assert "No BUY transactions for symbol: TestNoBuy." in out
+    assert "No BUY transactions for symbol: TestNoBuyFXF.ARCA." in out
     assert len(cf) == 5
     assert len(cf['TLT.NASDAQ']) == 0
     assert len(cf['FXF.ARCA']) == 16
