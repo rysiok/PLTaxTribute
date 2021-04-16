@@ -26,11 +26,6 @@ class TransactionSide(Enum):
     SELL = 2
 
 
-class TransactionType(Enum):
-    STOCK = 1
-    UNSUPPORTED = 99
-
-
 class CashFlowItemType(Enum):
     COMMISSION = 1
     TRADE = 2
@@ -39,41 +34,25 @@ class CashFlowItemType(Enum):
 
 # exante transaction log column positions
 class Column:
-    TIME = 5
+    ID = 0
     SYMBOL = 2
+    ISIN = 3
+    OP_TYPE = 4
+    TIME = 5
     SUM = 6
     ASSET = 7
     COMMENT = 10
-    TYPE = 4
 
 
-class Transaction:
-
-    def __init__(self, csv_row):
-        self.time = datetime.fromisoformat(csv_row[Column.TIME])
-        self.type = TransactionType.STOCK if csv_row[Column.TYPE] == "TRADE" else TransactionType.UNSUPPORTED
-        self.comment = csv_row[Column.COMMENT]
-
-        self.side = TransactionSide.BUY if csv_row[Column.SIDE] == "buy" else TransactionSide.SELL
-        self.price = Decimal(csv_row[Column.PRICE])
-        self.currency = csv_row[Column.CURRENCY]
-        self.count = int(csv_row[Column.COUNT])
-        self.commission = Decimal(csv_row[Column.COMMISSION])
-        self.volume = Decimal(csv_row[Column.VOLUME])
-        self.symbol = csv_row[Column.SYMBOL]
-
-    def __repr__(self):
-        return repr((
-            self.symbol,
-            self.type.name,
-            self.time,
-            self.side.name,
-            self.price,
-            self.currency,
-            self.count,
-            self.commission,
-            self.volume,
-        ))
+class TradeTransaction:
+    def __init__(self, time: datetime, side: TransactionSide, price: Decimal, currency: str, count: int, commission: Decimal, symbol: str):
+        self.time = time
+        self.side = side
+        self.price = price
+        self.currency = currency
+        self.count = count
+        self.commission = commission
+        self.symbol = symbol
 
 
 class CashFlowItem:
@@ -135,32 +114,59 @@ class NBP:
             exchange_date = exchange_date - timedelta(days=1)
 
 
+class Transaction:
+    @staticmethod
+    def parse(csv_rows: list):
+        op_type = csv_rows[0][Column.OP_TYPE]
+        if op_type == "TRADE":
+            time = datetime.fromisoformat(csv_rows[0][Column.TIME])
+            count = int(csv_rows[0][Column.SUM])
+            side = TransactionSide.BUY if count > 0 else TransactionSide.SELL
+            price = abs(Decimal(csv_rows[1][Column.SUM]) / count)
+            count = abs(count)
+            commission = abs(Decimal(csv_rows[2][Column.SUM]))
+            currency = csv_rows[1][Column.ASSET]
+            symbol = csv_rows[0][Column.ASSET]
+
+            return TradeTransaction(time, side, price, currency, count, commission, symbol)
+        if op_type == "FUNDING/WITHDRAWAL":
+            return None
+
+        print(bcolors.WARNING + "Unsupported transaction type. Only TRADE are supported.")
+        print(f"{op_type}{bcolors.ENDC}")
+        return None
+
+
 class Account:
     def __init__(self):
         self.cashflows = {}
         self.transaction_log = {}
 
     def load_transaction_log(self, file):
+        rows = []
         with open(file, newline='', encoding="utf-16") as csvfile:
             reader = csv.reader(csvfile, delimiter='\t')
             next(reader, None)  # skip header
-            for row in reader:
-                transaction = Transaction(row)
-                if transaction.type != TransactionType.STOCK:
-                    print(bcolors.WARNING + "Unsupported transaction type. Only STOCK is supported.")
-                    print(f"{transaction}{bcolors.ENDC}")
-                else:
-                    tr = self.transaction_log.get(transaction.symbol, [])
-                    if not tr:
-                        self.transaction_log[transaction.symbol] = tr
-                    tr.append(transaction)
+            rows = [row for row in reader]
+        rows.sort(key=lambda i: i[Column.ID])
+        group_by_time_log = {}
+        for row in rows:  # group transaction by time
+            time = datetime.fromisoformat(row[Column.TIME])
+            # TODO: implement group by year
+            if time.date().year != 2020:
+                continue
+            group_by_time_log[time] = [row] if time not in group_by_time_log.keys() else group_by_time_log[time] + [row]
+
+        for v in group_by_time_log.values():  # parse rows groupped by time
+            transaction_log_item = Transaction.parse(v)
+            if transaction_log_item:
+                s = transaction_log_item.symbol
+                self.transaction_log[s] = [transaction_log_item] if s not in self.transaction_log.keys() else self.transaction_log[s] + [transaction_log_item]
 
     def init_cash_flow(self, nbp=NBP()):
         nbp.load_cache()
 
         for symbol, tr in self.transaction_log.items():
-            tr.reverse()
-
             sell = [t for t in tr if t.side == TransactionSide.SELL]
             buy = [t for t in tr if t.side == TransactionSide.BUY]
 
@@ -169,30 +175,21 @@ class Account:
                 continue
 
             cashflow = []
-            if __debug__:
-                pl = 0
             for s in sell:
                 pln = nbp.get_nbp_day_before(s.currency, s.time)
                 cashflow.append(CashFlowItem(CashFlowItemType.TRADE, s.time, s.count, s.price, s.currency, pln))
                 cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, s.time, -1, s.commission, s.currency, pln))
-                if __debug__:
-                    income = s.count * s.price
-                    outcome = 0
 
                 while s.count and buy:
                     b = buy[0]
                     b.count -= s.count
                     pln = nbp.get_nbp_day_before(s.currency, b.time)
                     if b.count <= 0:
-                        if __debug__:
-                            outcome += (b.count + s.count) * b.price
                         cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -(b.count + s.count), b.price, s.currency, pln))
                         cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, b.commission, s.currency, pln))  # full cost
                         s.count = -b.count  # left count
                         del buy[0]
                     else:
-                        if __debug__:
-                            outcome += s.count * b.price
                         cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -s.count, b.price, s.currency, pln))
                         ratio = Decimal(s.count / (s.count + b.count))
                         commission = round(b.commission * ratio, 2)
@@ -200,18 +197,7 @@ class Account:
                                                      nbp.get_nbp_day_before(s.currency, s.time)))  # partial cost
                         b.commission -= commission
                         break
-                if __debug__:
-                    pl = pl + income - outcome
             self.cashflows[symbol] = cashflow
-
-            if __debug__:  # validate data
-                trade_income = sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-                trade_cost = -sum([cf.count * cf.price for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
-                crc_income = sum([s.volume for s in sell])
-                if trade_income != crc_income:
-                    raise Exception(f"income doesn't math for symbol {symbol}")
-                if pl != trade_income - trade_cost:
-                    raise Exception(f"PL doesn't math for symbol {symbol}")
 
         nbp.save_cache()
 

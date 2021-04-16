@@ -58,9 +58,8 @@ def test_load_transaction_log(capfd, nbp):
     account = Account()
     account.load_transaction_log(r"TR.csv")
     captured = capfd.readouterr()
-    assert "Unsupported transaction type. Only STOCK is supported." in captured.out
-    assert "TestNoStock" in captured.out
-    assert "'UNSUPPORTED'" in captured.out
+    assert "Unsupported transaction type. Only TRADE are supported." in captured.out
+    assert "DIVIDEND" in captured.out
 
 
 def test_init_cash_flow(account_real):
