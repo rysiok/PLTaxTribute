@@ -39,21 +39,21 @@ class CashFlowItemType(Enum):
 
 # exante transaction log column positions
 class Column:
-    TIME = 0
-    SIDE = 2
-    SYMBOL = 3
-    PRICE = 6
-    CURRENCY = 7
-    COUNT = 8
-    COMMISSION = 9
-    VOLUME = 12
-    TYPE = 5
+    TIME = 5
+    SYMBOL = 2
+    SUM = 6
+    ASSET = 7
+    COMMENT = 10
+    TYPE = 4
 
 
 class Transaction:
 
     def __init__(self, csv_row):
         self.time = datetime.fromisoformat(csv_row[Column.TIME])
+        self.type = TransactionType.STOCK if csv_row[Column.TYPE] == "TRADE" else TransactionType.UNSUPPORTED
+        self.comment = csv_row[Column.COMMENT]
+
         self.side = TransactionSide.BUY if csv_row[Column.SIDE] == "buy" else TransactionSide.SELL
         self.price = Decimal(csv_row[Column.PRICE])
         self.currency = csv_row[Column.CURRENCY]
@@ -61,7 +61,6 @@ class Transaction:
         self.commission = Decimal(csv_row[Column.COMMISSION])
         self.volume = Decimal(csv_row[Column.VOLUME])
         self.symbol = csv_row[Column.SYMBOL]
-        self.type = TransactionType.STOCK if csv_row[Column.TYPE] == "STOCK" else TransactionType.UNSUPPORTED
 
     def __repr__(self):
         return repr((
