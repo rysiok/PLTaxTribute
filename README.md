@@ -1,6 +1,7 @@
-![ci](https://github.com/rysiok/exante_pl_tax/actions/workflows/python-package.yml/badge.svg)
+This script calculates trade income, cost, dividends and paid tax from
+Exante transaction log, using FIFO approach and D-1 NBP PLN exchange rate.
 
-This script Calculates income and cost from Exante transaction log, using FIFO approach and D-1 NBP PLN exchange rate.
+![ci](https://github.com/rysiok/exante_pl_tax/actions/workflows/python-package.yml/badge.svg)
 
 Usage: 
     
@@ -13,9 +14,11 @@ Options:
 
 Commands:
   
-    foreign  Calculation without conversion to PLN per asset.
-    pln      Calculation in PLN per asset (includes total).
-    total    Total calculation in PLN.
+    dividend      Dividend and paid tax witohut conversion to PLN per asset.
+    dividend-pln  Dividend and paid tax in PLN.
+    foreign       Trade income/cost without conversion to PLN per asset.
+    pln           Trade income/cost in PLN per asset (includes total).    
+    total         Total trade income/cost in PLN.
 
 ## TODO:
 - multifile transaction log
