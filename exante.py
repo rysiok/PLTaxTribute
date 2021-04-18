@@ -263,7 +263,7 @@ class Account:
         return table
 
     def get_pln_total(self):
-        table = [["income", "cost", "P/L"]]
+        table = [["income\r[PIT38 C22]", "cost\r[PIT38 C23]", "P/L"]]
         trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if
                             cf.count > 0 and cf.type == CashFlowItemType.TRADE])
         trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if cf.count < 0])
