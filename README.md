@@ -19,8 +19,8 @@ Commands:
 
 ## TODO:
 - multifile transaction log
-- dividends
-- mulitiyear support
-- mulitiyear cache and opt
+- multiyear support
+- multiyear cache and opt
+- PIT/ZG support
 - autoconversion support
 - stock split support
