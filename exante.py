@@ -171,6 +171,16 @@ class NBP:
 
 
 class Account:
+
+    """
+1. Load transaction log into an array from CSV file and sort it ascending by transaction id.
+2. For each transaction check operation type. Based on it create TradeTransaction or DividendTransaction.
+   Fill missing data (ie. price, commission, tax) based on data in following transactions.
+   Store Transactions list in dictionary using symbol as a key (group Transaction by symbol)
+3. For each symbol process sell Transactions and create CashFlowItem (TRADE, COMMISSION, DIVIDEND, TAX), based on FIFO method, getting amount in PLN based D-1 exchange rate,
+   where transaction time is T+0.  Store each CashFlowItem list in a dictionary using symbol as a key.
+
+    """
     def __init__(self):
         self.cashflows = {}
         self.transaction_log = {}
@@ -206,12 +216,12 @@ class Account:
                     b = buy[0]
                     b.count -= s.count
                     pln = nbp.get_nbp_day_before(s.currency, b.time)
-                    if b.count <= 0:
+                    if b.count <= 0:    # more to sell or everything sold
                         cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -(b.count + s.count), b.price, s.currency, pln))
                         cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, b.commission, s.currency, pln))  # full cost
                         s.count = -b.count  # left count
-                        del buy[0]
-                    else:
+                        del buy[0]  # remove matching buy transaction
+                    else:   # partial sell
                         cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -s.count, b.price, s.currency, pln))
                         ratio = Decimal(s.count / (s.count + b.count))
                         commission = round(b.commission * ratio, 2)
