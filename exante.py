@@ -180,6 +180,8 @@ class Account:
 3. For each symbol process sell Transactions and create CashFlowItem (TRADE, COMMISSION, DIVIDEND, TAX), based on FIFO method, getting amount in PLN based D-1 exchange rate,
    where transaction time is T+0.  Store each CashFlowItem list in a dictionary using symbol as a key.
 
+    During sum calculations Use round(2) on CashFlowItem level after multiplication count * price * pln exchange rate before sum. Decimal is used for floating pont calculations.
+
     """
     def __init__(self):
         self.cashflows = {}
