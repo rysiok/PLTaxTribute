@@ -28,4 +28,6 @@ Commands:
 - autoconversion support
 - stock split support
 
+# Disclaimer
 
+**This code is provided "as is" and without warranty of any kind. I'm not an accountant or tax advisor. Use at your own risk.**
