@@ -119,8 +119,15 @@ class Transaction:
             return
         details = row[MintosColumn.DETAILS].lower()
 
-        if "interest received" not in details:
+        include = ("interest received",
+                   #"late fees received",
+                   "secondary market fee",
+                   #"discount/premium for secondary market transaction",
+                   )
+
+        if all([i not in details for i in include]):
             return
+
 
         time = datetime.fromisoformat(row[MintosColumn.TIME])
         value = Decimal(row[MintosColumn.TURNOVER])
