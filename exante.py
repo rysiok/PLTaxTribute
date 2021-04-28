@@ -2,6 +2,8 @@ import csv
 from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import Enum
+from typing import List
+
 import click
 
 import requests
@@ -47,6 +49,14 @@ class Column:
     COMMENT = 10
 
 
+# Mintos transaction log column positions
+class MintosColumn:
+    TIME = 0
+    DETAILS = 2
+    TURNOVER = 3
+    CURRENCY = 5
+
+
 class Transaction:
     def __init__(self, time: datetime, side: TransactionSide, symbol: str):
         self.time = time
@@ -54,7 +64,7 @@ class Transaction:
         self.symbol = symbol
 
     @staticmethod
-    def parse(row: dict, log: dict):
+    def parse(row: List[str], log: dict):
         op_type = row[Column.OP_TYPE]
         supported_op_types = ("TRADE", "COMMISSION", "DIVIDEND", "TAX")
 
@@ -102,6 +112,22 @@ class Transaction:
         if op_type == "TAX":
             last_log_item.tax = abs(Decimal(row[Column.SUM]))
             return
+
+    @staticmethod
+    def parseMintos(row: List[str], log: dict):
+        if len(row) == 1:  # skip invalid entries
+            return
+        details = row[MintosColumn.DETAILS].lower()
+
+        if "interest received" not in details:
+            return
+
+        time = datetime.fromisoformat(row[MintosColumn.TIME])
+        value = Decimal(row[MintosColumn.TURNOVER])
+        currency = row[MintosColumn.CURRENCY]
+        symbol = "M"
+        log_item = DividendTransaction(time=time, value=value, symbol=symbol, currency=currency)
+        log[symbol] = [log_item] if symbol not in log.keys() else log[symbol] + [log_item]
 
 
 class TradeTransaction(Transaction):
@@ -171,7 +197,6 @@ class NBP:
 
 
 class Account:
-
     """
 1. Load transaction log into an array from CSV file and sort it ascending by transaction id.
 2. For each transaction check operation type. Based on it create TradeTransaction or DividendTransaction.
@@ -183,6 +208,7 @@ class Account:
     During sum calculations Use round(2) on CashFlowItem level after multiplication count * price * pln exchange rate before sum. Decimal is used for floating pont calculations.
 
     """
+
     def __init__(self):
         self.cashflows = {}
         self.transaction_log = {}
@@ -195,6 +221,15 @@ class Account:
         rows.sort(key=lambda i: i[Column.ID])
         for row in rows:
             Transaction.parse(row, self.transaction_log)
+
+    def load_mintos_transaction_log(self, file):
+        with open(file, newline='') as csvfile:
+            reader = csv.reader(csvfile, delimiter=',')
+            next(reader, None)  # skip header
+            rows = [row for row in reader]
+        rows.sort(key=lambda i: i[MintosColumn.TIME])
+        for row in rows:
+            Transaction.parseMintos(row, self.transaction_log)
 
     def init_cash_flow(self, nbp=NBP()):
         nbp.load_cache()
@@ -218,12 +253,12 @@ class Account:
                     b = buy[0]
                     b.count -= s.count
                     pln = nbp.get_nbp_day_before(s.currency, b.time)
-                    if b.count <= 0:    # more to sell or everything sold
+                    if b.count <= 0:  # more to sell or everything sold
                         cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -(b.count + s.count), b.price, s.currency, pln))
                         cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, b.commission, s.currency, pln))  # full cost
                         s.count = -b.count  # left count
                         del buy[0]  # remove matching buy transaction
-                    else:   # partial sell
+                    else:  # partial sell
                         cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -s.count, b.price, s.currency, pln))
                         ratio = Decimal(s.count / (s.count + b.count))
                         commission = round(b.commission * ratio, 2)
@@ -235,6 +270,20 @@ class Account:
                 pln = nbp.get_nbp_day_before(d.currency, d.time)
                 cashflow.append(CashFlowItem(CashFlowItemType.DIVIDEND, d.time, 1, d.value, d.currency, pln))
                 cashflow.append(CashFlowItem(CashFlowItemType.TAX, d.time, 1, d.tax, d.currency, pln))
+
+            self.cashflows[symbol] = cashflow
+
+        nbp.save_cache()
+
+    def init_mintos_cash_flow(self, nbp=NBP()):
+        nbp.load_cache()
+
+        for symbol, tr in self.transaction_log.items():
+            dividend = [t for t in tr if t.side == TransactionSide.DIVIDEND]
+            cashflow = []
+            for d in dividend:
+                pln = nbp.get_nbp_day_before(d.currency, d.time)
+                cashflow.append(CashFlowItem(CashFlowItemType.DIVIDEND, d.time, 1, d.value, d.currency, pln))
 
             self.cashflows[symbol] = cashflow
 
@@ -300,8 +349,26 @@ class Account:
         if income > 0:
             percent = round(paid_tax / income * 100)
             tax = round(income * Decimal("0.19"), 2)
-            left_to_pay = round(tax-paid_tax)
+            left_to_pay = round(tax - paid_tax)
             table.append([income, paid_tax, percent, tax, left_to_pay])
+        return table
+
+    def get_mintos(self):
+        table = [["symbol", "currency", "income"]]
+        for symbol, cashflow in self.cashflows.items():
+            if cashflow:  # output only items with data
+                income = sum([cf.price for cf in cashflow if cf.type == CashFlowItemType.DIVIDEND])
+                if income > 0:
+                    table.append([symbol, cashflow[0].currency, income])
+        return table
+
+    def get_mintos_pln(self):
+        table = [["income", "total to pay (19%)\r[PIT38 G46]", "left to pay (19%)\r[PIT38 G47]"]]
+        income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if cf.type == CashFlowItemType.DIVIDEND])
+        if income > 0:
+            tax = round(income * Decimal("0.19"), 2)
+            left_to_pay = round(tax)
+            table.append([income, tax, left_to_pay])
         return table
 
 
@@ -318,8 +385,8 @@ def ls(text: str):
 def cli(ctx, input_file):
     """This script calculates trade income, cost, dividends and paid tax from Exante transaction log, using FIFO approach and D-1 NBP PLN exchange rate."""
     account = Account()
-    account.load_transaction_log(input_file)
-    account.init_cash_flow()
+    account.load_mintos_transaction_log(input_file)
+    account.init_mintos_cash_flow()
     ctx.obj["account"] = account
 
 
@@ -353,6 +420,23 @@ def dividend(ctx):
     account = ctx.obj['account']
     ls("FOREIGN DIVIDEND")
     print(tabulate(account.get_dividends(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+
+
+@cli.command(help='Mintos income in original currency.')
+@click.pass_context
+def mintos(ctx):
+    account = ctx.obj['account']
+    ls("MINTOS INCOME")
+    print(tabulate(account.get_mintos(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+
+
+@cli.command(help='Mintos income in PLN.')
+@click.pass_context
+def mintos_pln(ctx):
+    account = ctx.obj['account']
+    ls("MINTOS INCOME PLN")
+    print(tabulate(account.get_mintos_pln(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+
 
 @cli.command(help='Dividend and paid tax in PLN.')
 @click.pass_context
