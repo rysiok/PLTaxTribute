@@ -120,8 +120,9 @@ class Transaction:
         details = row[MintosColumn.DETAILS].lower()
 
         include = ("interest received",
-                   #"late fees received",
-                   "secondary market fee",
+                   "late fees received",
+                   "refer a friend bonus"
+                   #"secondary market fee",
                    #"discount/premium for secondary market transaction",
                    )
 
@@ -371,11 +372,10 @@ class Account:
 
     def get_mintos_pln(self):
         table = [["income", "total to pay (19%)\r[PIT38 G46]", "left to pay (19%)\r[PIT38 G47]"]]
-        income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if cf.type == CashFlowItemType.DIVIDEND])
+        income = round(sum([cf.price * cf.pln for key in self.cashflows for cf in self.cashflows[key] if cf.type == CashFlowItemType.DIVIDEND]), 2)
         if income > 0:
             tax = round(income * Decimal("0.19"), 2)
-            left_to_pay = round(tax)
-            table.append([income, tax, left_to_pay])
+            table.append([income, tax, round(tax)])
         return table
 
 
