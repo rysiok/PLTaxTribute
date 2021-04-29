@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/ExantePLTax.iml" filepath="$PROJECT_DIR$/.idea/ExantePLTax.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/PLTaxTribute.iml" filepath="$PROJECT_DIR$/.idea/PLTaxTribute.iml" />
     </modules>
   </component>
 </project>
