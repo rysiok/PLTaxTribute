@@ -2,6 +2,7 @@ Simple python script for Polish tax calculation from foreign income from platfor
 
 ![ci](https://github.com/rysiok/exante_pl_tax/actions/workflows/python-package.yml/badge.svg)
 
+### Exante
 Usage: tax.py exante [OPTIONS]
 
     Calculates trade income, cost, dividends and paid tax from Exante
@@ -9,9 +10,20 @@ Usage: tax.py exante [OPTIONS]
 
 Options:
 
-    -i, --input-file TEXT           Transaction log file name.  [required]
-    -c, --calculation [TRADE|TRADE_PLN|DIVIDEND|DIVIDEND_PLN]
-                                  Calculation type  [required]
+    -i, --input-file TEXT                                       Transaction log file name.  [required]
+    -c, --calculation [TRADE|TRADE_PLN|DIVIDEND|DIVIDEND_PLN]   Calculation type  [required]
+
+### Mintos
+
+Usage: tax.py mintos [OPTIONS]
+
+    Calculates income and tax from Mintos transaction log, using D-1 NBP PLN exchange rate.
+
+Options:
+    
+    -i, --input-file TEXT                   Transaction log file name.  [required]
+    -c, --calculation [INCOME|INCOME_PLN]   Calculation type  [required]
+
 
 ## TODO:
 
