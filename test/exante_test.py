@@ -8,6 +8,7 @@ from engine.NBP import NBP
 from engine.exante import ExanteAccount
 
 test_cache_file = ".test_cache"
+transactions_file = r"exante.csv"
 
 
 @pytest.fixture
@@ -28,7 +29,7 @@ def nbp_real():
 @pytest.fixture
 def account_real(capfd, nbp_real):
     account = ExanteAccount()
-    account.load_transaction_log(r"../TR.csv")
+    account.load_transaction_log(transactions_file)
     account.init_cash_flow(nbp_real)
     return account, capfd.readouterr().out
 
@@ -57,7 +58,7 @@ def test_get_nbp_day_before(nbp: NBP):
 
 def test_load_transaction_log(capfd, nbp):
     account = ExanteAccount()
-    account.load_transaction_log(r"../TR.csv")
+    account.load_transaction_log(transactions_file)
     captured = capfd.readouterr()
     assert "Unsupported transaction type AUTOCONVERSION." in captured.out
 
