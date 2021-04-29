@@ -171,7 +171,6 @@ class NBP:
 
 
 class Account:
-
     """
 1. Load transaction log into an array from CSV file and sort it ascending by transaction id.
 2. For each transaction check operation type. Based on it create TradeTransaction or DividendTransaction.
@@ -183,6 +182,7 @@ class Account:
     During sum calculations Use round(2) on CashFlowItem level after multiplication count * price * pln exchange rate before sum. Decimal is used for floating pont calculations.
 
     """
+
     def __init__(self):
         self.cashflows = {}
         self.transaction_log = {}
@@ -218,12 +218,12 @@ class Account:
                     b = buy[0]
                     b.count -= s.count
                     pln = nbp.get_nbp_day_before(s.currency, b.time)
-                    if b.count <= 0:    # more to sell or everything sold
+                    if b.count <= 0:  # more to sell or everything sold
                         cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -(b.count + s.count), b.price, s.currency, pln))
                         cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, b.commission, s.currency, pln))  # full cost
                         s.count = -b.count  # left count
                         del buy[0]  # remove matching buy transaction
-                    else:   # partial sell
+                    else:  # partial sell
                         cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -s.count, b.price, s.currency, pln))
                         ratio = Decimal(s.count / (s.count + b.count))
                         commission = round(b.commission * ratio, 2)
@@ -300,7 +300,7 @@ class Account:
         if income > 0:
             percent = round(paid_tax / income * 100)
             tax = round(income * Decimal("0.19"), 2)
-            left_to_pay = round(tax-paid_tax)
+            left_to_pay = round(tax - paid_tax)
             table.append([income, paid_tax, percent, tax, left_to_pay])
         return table
 
@@ -312,63 +312,43 @@ def ls(text: str):
 
 
 @click.group(chain=True)
-@click.option('-i', '--input-file', required=True, help='Transaction log file name.')
 @click.pass_context
-# @click.option('--output', type=click.Choice(['TABLE', 'JSON'], case_sensitive=False), default='TABLE', help='Transaction log file name.')
-def cli(ctx, input_file):
+def cli(ctx):
     """This script calculates trade income, cost, dividends and paid tax from Exante transaction log, using FIFO approach and D-1 NBP PLN exchange rate."""
+    pass
+
+
+@cli.command(help='Calculates profit for the Exante account.')
+@click.option('-i', '--input-file', required=True, help='Transaction log file name.')
+@click.option('-t', '--calculation', required=True, multiple=True, type=click.Choice(['TRADE', 'DIVIDEND'], case_sensitive=False), help="Calculation type")
+@click.option('-c', '--currency', type=click.Choice(['PLN', 'FOREIGN'], case_sensitive=False), help="Calculation currency [default: PLN]", default="PLN")
+@click.pass_context
+def exante(ctx, input_file, calculation, currency):
     account = Account()
     account.load_transaction_log(input_file)
     account.init_cash_flow()
-    ctx.obj["account"] = account
+    ls(f"{calculation} {currency}")
+    if calculation == "TRADE":
+        if currency == "PLN":
+            table = account.get_pln()
+        elif currency == "FOREIGN":
+            table = account.get_foreign()
+    elif calculation == "DIVIDEND":
+        if currency == "PLN":
+            table = account.get_dividends_pln()
+        elif currency == "FOREIGN":
+            table = account.get_dividends()
+            """
+                Kwotę należnego podatku wpisuje do pola o enigmatycznej nazwie „Zryczałtowany podatek obliczony od przychodów (dochodów), o których mowa w art. 30a ust. 1 pkt 1–5 ustawy, uzyskanych poza granicami Rzeczypospolitej Polskiej”.
+                Kwotę podatku pobranego za granicą wpisujemy do pola „Podatek zapłacony za granicą, o którym mowa w art. 30a ust. 9 ustawy”.
 
-
-@cli.command(help='Trade income/cost without conversion to PLN per asset.')
-@click.pass_context
-def foreign(ctx):
-    account = ctx.obj['account']
-    ls("FOREIGN")
-    print(tabulate(account.get_foreign(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
-
-
-@cli.command(help='Trade income/cost in PLN per asset (includes total).')
-@click.pass_context
-def pln(ctx):
-    account = ctx.obj['account']
-    ls("PLN")
-    print(tabulate(account.get_pln(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
-
-
-@cli.command(help='Total trade income/cost in PLN.')
-@click.pass_context
-def total(ctx):
-    account = ctx.obj['account']
-    ls("TOTAL PLN")
-    print(tabulate(account.get_pln_total(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
-
-
-@cli.command(help='Dividend and paid tax witohut conversion to PLN per asset.')
-@click.pass_context
-def dividend(ctx):
-    account = ctx.obj['account']
-    ls("FOREIGN DIVIDEND")
-    print(tabulate(account.get_dividends(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
-
-@cli.command(help='Dividend and paid tax in PLN.')
-@click.pass_context
-def dividend_pln(ctx):
-    """
-        Kwotę należnego podatku wpisuje do pola o enigmatycznej nazwie „Zryczałtowany podatek obliczony od przychodów (dochodów), o których mowa w art. 30a ust. 1 pkt 1–5 ustawy, uzyskanych poza granicami Rzeczypospolitej Polskiej”.
-        Kwotę podatku pobranego za granicą wpisujemy do pola „Podatek zapłacony za granicą, o którym mowa w art. 30a ust. 9 ustawy”.
-
-        2019
-        W PIT-36 – pola 355, 356, 357 i 358 w sekcji N.
-        W PIT-36L – pola 115 i 116 w sekcji K.
-        W PIT-38 – pola 45 i 46 w sekcji G.
-    """
-    account = ctx.obj['account']
-    ls("PLN DIVIDEND")
-    print(tabulate(account.get_dividends_pln(), headers="firstrow", floatfmt=".2f", tablefmt="presto"))
+                2019
+                W PIT-36 – pola 355, 356, 357 i 358 w sekcji N.
+                W PIT-36L – pola 115 i 116 w sekcji K.
+                W PIT-38 – pola 45 i 46 w sekcji G.
+            """
+    if table:
+        print(tabulate(table, headers="firstrow", floatfmt=".2f", tablefmt="presto"))
 
 
 if __name__ == '__main__':
