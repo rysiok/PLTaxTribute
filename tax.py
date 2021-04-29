@@ -1,32 +1,25 @@
 import click
 from tabulate import tabulate
 
-from exante import Account
-
-
-def ls(text: str):
-    text = text.strip() + " "
-    print()
-    print("* " + text + "*" * (10 - len(text)))
+from engine.exante import ExanteAccount
+from engine.utils import ls
 
 
 @click.group(chain=True)
-@click.pass_context
-def cli(ctx):
-    """This script calculates trade income, cost, dividends and paid tax from Exante transaction log, using FIFO approach and D-1 NBP PLN exchange rate."""
+def cli():
     pass
 
 
-@cli.command(help='Calculates profit for the Exante account.')
+@cli.command()
 @click.option('-i', '--input-file', required=True, help='Transaction log file name.')
-@click.option('-t', '--calculation', required=True, multiple=True, type=click.Choice(['TRADE', 'TRADE_PLN', 'DIVIDEND', 'DIVIDEND_PLN'], case_sensitive=False),
+@click.option('-c', '--calculation', required=True, multiple=True, type=click.Choice(['TRADE', 'TRADE_PLN', 'DIVIDEND', 'DIVIDEND_PLN'], case_sensitive=False),
               help="Calculation type")
-@click.pass_context
-def exante(ctx, input_file, calculation):
-    account = Account()
+def exante(input_file, calculation):
+    """Calculates trade income, cost, dividends and paid tax from Exante transaction log, using FIFO approach and D-1 NBP PLN exchange rate."""
+    account = ExanteAccount()
     account.load_transaction_log(input_file)
     account.init_cash_flow()
-
+    table = None
     for c in calculation:
         ls(f"{c}")
         if c == "TRADE":
@@ -51,4 +44,4 @@ def exante(ctx, input_file, calculation):
 
 
 if __name__ == '__main__':
-    cli(obj={})
+    cli()

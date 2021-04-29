@@ -1,26 +1,20 @@
-This script calculates trade income, cost, dividends and paid tax from
-Exante transaction log, using FIFO approach and D-1 NBP PLN exchange rate.
+Simple python script for Polish tax calculation from foreign income from platforms that don't provide PIT8C form - from Exante, Mintos.
 
 ![ci](https://github.com/rysiok/exante_pl_tax/actions/workflows/python-package.yml/badge.svg)
 
-Usage: 
-    
-    exante.py [OPTIONS] COMMAND1 [ARGS]... [COMMAND2 [ARGS]...]...
+Usage: tax.py exante [OPTIONS]
+
+    Calculates trade income, cost, dividends and paid tax from Exante
+    transaction log, using FIFO approach and D-1 NBP PLN exchange rate.
 
 Options:
-    
-    -i, --input-file TEXT  Transaction log file name.  [required]
-    --help                 Show this message and exit.
 
-Commands:
-  
-    dividend      Dividend and paid tax witohut conversion to PLN per asset.
-    dividend-pln  Dividend and paid tax in PLN.
-    foreign       Trade income/cost without conversion to PLN per asset.
-    pln           Trade income/cost in PLN per asset (includes total).    
-    total         Total trade income/cost in PLN.
+    -i, --input-file TEXT           Transaction log file name.  [required]
+    -c, --calculation [TRADE|TRADE_PLN|DIVIDEND|DIVIDEND_PLN]
+                                  Calculation type  [required]
 
 ## TODO:
+
 - multifile transaction log
 - multiyear support
 - multiyear cache and opt

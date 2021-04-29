@@ -1,38 +1,10 @@
-import csv
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
-from enum import Enum
-import click
+from typing import List
 
-import requests
-import simplejson as json
-from tabulate import tabulate
-
-
-class bcolors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKCYAN = '\033[96m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-
-
-class TransactionSide(Enum):
-    BUY = 1
-    SELL = 2
-    DIVIDEND = 3
-
-
-class CashFlowItemType(Enum):
-    COMMISSION = 1
-    TRADE = 2
-    PL = 3
-    DIVIDEND = 4
-    TAX = 5
+from engine.account import AccountBase
+from engine.transaction import TransactionSide, TradeTransaction, DividendTransaction, CashFlowItem, CashFlowItemType
+from engine.utils import bcolors
 
 
 # exante transaction log column positions
@@ -47,14 +19,23 @@ class Column:
     COMMENT = 10
 
 
-class Transaction:
-    def __init__(self, time: datetime, side: TransactionSide, symbol: str):
-        self.time = time
-        self.side = side
-        self.symbol = symbol
+class ExanteAccount(AccountBase):
+    """
+1. Load transaction log into an array from CSV file and sort it ascending by transaction id.
+2. For each transaction check operation type. Based on it create TradeTransaction or DividendTransaction.
+   Fill missing data (ie. price, commission, tax) based on data in following transactions.
+   Store Transactions list in dictionary using symbol as a key (group Transaction by symbol)
+3. For each symbol process sell Transactions and create CashFlowItem (TRADE, COMMISSION, DIVIDEND, TAX), based on FIFO method, getting amount in PLN based D-1 exchange rate,
+   where transaction time is T+0.  Store each CashFlowItem list in a dictionary using symbol as a key.
 
-    @staticmethod
-    def parse(row: dict, log: dict):
+    During sum calculations Use round(2) on CashFlowItem level after multiplication count * price * pln exchange rate before sum. Decimal is used for floating pont calculations.
+
+    """
+
+    def load_transaction_log(self, file):
+        super()._load_transaction_log(file, "utf=16", '\t', lambda i: i[Column.ID])
+
+    def _parse(self, row: List[str]):
         op_type = row[Column.OP_TYPE]
         supported_op_types = ("TRADE", "COMMISSION", "DIVIDEND", "TAX")
 
@@ -76,17 +57,17 @@ class Transaction:
             side = TransactionSide.BUY if count > 0 else TransactionSide.SELL
             count = abs(count)
             log_item = TradeTransaction(time=time, side=side, count=count, symbol=symbol)
-            log[symbol] = [log_item] if symbol not in log.keys() else log[symbol] + [log_item]
+            self.transaction_log[symbol] = [log_item] if symbol not in self.transaction_log.keys() else self.transaction_log[symbol] + [log_item]
             return
 
         if op_type == "DIVIDEND":
             value = Decimal(row[Column.SUM])
             log_item = DividendTransaction(time=time, value=value, symbol=symbol, currency=asset)
-            log[symbol] = [log_item] if symbol not in log.keys() else log[symbol] + [log_item]
+            self.transaction_log[symbol] = [log_item] if symbol not in self.transaction_log.keys() else self.transaction_log[symbol] + [log_item]
             return
 
         # another row of transaction object
-        last_log_item = log[symbol][-1]
+        last_log_item = self.transaction_log[symbol][-1]
 
         if isin == "None" and last_log_item.time == time and last_log_item.symbol == symbol:
             # price, currency for last TradeTransaction
@@ -103,102 +84,7 @@ class Transaction:
             last_log_item.tax = abs(Decimal(row[Column.SUM]))
             return
 
-
-class TradeTransaction(Transaction):
-    def __init__(self, time: datetime, side: TransactionSide, symbol: str, count: int, price: Decimal = None, currency: str = None, commission: Decimal = None):
-        super().__init__(time, side, symbol)
-        self.price = price
-        self.currency = currency
-        self.count = count
-        self.commission = commission
-
-
-class DividendTransaction(Transaction):
-    def __init__(self, time: datetime, symbol: str, value: Decimal, currency: str, tax: Decimal = None):
-        super().__init__(time, TransactionSide.DIVIDEND, symbol)
-        self.value = value
-        self.tax = tax
-        self.currency = currency
-
-
-class CashFlowItem:
-    def __init__(self, type: CashFlowItemType, time: datetime, count: int, price: Decimal, currency: str, pln: Decimal):
-        self.type = type
-        self.time = time
-        self.count = count
-        self.price = price
-        self.currency = currency
-        self.pln = pln
-
-
-class NBP:
-    cache = {}
-
-    def __init__(self, cache_file: str = ".cache"):
-        self.cache_file = cache_file
-
-    def save_cache(self):
-        try:
-            with open(self.cache_file, "w") as f:
-                json.dump(self.cache, f)
-        except OSError:
-            pass
-
-    def load_cache(self):
-        try:
-            with open(self.cache_file, "rb") as f:
-                self.cache = {k: round(Decimal(v), 4) for k, v in json.load(f).items()}
-        except OSError:
-            pass
-
-    def get_nbp_day_before(self, currency: str, date: datetime):
-        date = date.date()
-        exchange_date = date - timedelta(days=1)
-
-        hash = f"{date} {currency}"
-
-        hit = self.cache.get(hash, None)
-        if hit:
-            return hit
-
-        while True:
-            response = requests.get(r"https://api.nbp.pl/api/exchangerates/rates/a/%s/%s?format=json" % (currency, exchange_date))
-            if response.status_code == 200:
-                data = round(Decimal(response.json()["rates"][0]["mid"]), 4)
-                self.cache[hash] = data
-                return data
-            exchange_date = exchange_date - timedelta(days=1)
-
-
-class Account:
-    """
-1. Load transaction log into an array from CSV file and sort it ascending by transaction id.
-2. For each transaction check operation type. Based on it create TradeTransaction or DividendTransaction.
-   Fill missing data (ie. price, commission, tax) based on data in following transactions.
-   Store Transactions list in dictionary using symbol as a key (group Transaction by symbol)
-3. For each symbol process sell Transactions and create CashFlowItem (TRADE, COMMISSION, DIVIDEND, TAX), based on FIFO method, getting amount in PLN based D-1 exchange rate,
-   where transaction time is T+0.  Store each CashFlowItem list in a dictionary using symbol as a key.
-
-    During sum calculations Use round(2) on CashFlowItem level after multiplication count * price * pln exchange rate before sum. Decimal is used for floating pont calculations.
-
-    """
-
-    def __init__(self):
-        self.cashflows = {}
-        self.transaction_log = {}
-
-    def load_transaction_log(self, file):
-        with open(file, newline='', encoding="utf-16") as csvfile:
-            reader = csv.reader(csvfile, delimiter='\t')
-            next(reader, None)  # skip header
-            rows = [row for row in reader]
-        rows.sort(key=lambda i: i[Column.ID])
-        for row in rows:
-            Transaction.parse(row, self.transaction_log)
-
-    def init_cash_flow(self, nbp=NBP()):
-        nbp.load_cache()
-
+    def _load_cash_flow(self, nbp):
         for symbol, tr in self.transaction_log.items():
             sell = [t for t in tr if t.side == TransactionSide.SELL]
             buy = [t for t in tr if t.side == TransactionSide.BUY]
@@ -236,22 +122,22 @@ class Account:
                 cashflow.append(CashFlowItem(CashFlowItemType.DIVIDEND, d.time, 1, d.value, d.currency, pln))
                 cashflow.append(CashFlowItem(CashFlowItemType.TAX, d.time, 1, d.tax, d.currency, pln))
 
-            self.cashflows[symbol] = cashflow
-
-        nbp.save_cache()
+            self.cash_flows[symbol] = cashflow
 
     def get_foreign(self):
         table = [["symbol", "currency", "income", "cost", "P/L", "(commission)"]]
-        for symbol, cashflow in self.cashflows.items():
+        for symbol, cashflow in self.cash_flows.items():
             if cashflow:  # output only items with data
                 trade_income = sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
                 if trade_income:
                     trade_cost = -sum([cf.count * cf.price for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
                     commission_cost = -sum([cf.count * cf.price for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
-                    assert sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.COMMISSION]) == 0, f"commission_cost != 0"
+                    assert sum(
+                        [cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.COMMISSION]) == 0, f"commission_cost != 0"
 
                     table.append(
-                        [symbol, cashflow[0].currency, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost, commission_cost])
+                        [symbol, cashflow[0].currency, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost,
+                         commission_cost])
         return table
 
     def get_pln(self):
@@ -259,7 +145,7 @@ class Account:
         total_trade_income = 0
         total_trade_cost = 0
 
-        for symbol, cashflow in self.cashflows.items():
+        for symbol, cashflow in self.cash_flows.items():
             if cashflow:  # output only items with data
                 trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
                 if trade_income:
@@ -276,15 +162,15 @@ class Account:
 
     def get_pln_total(self):
         table = [["income\r[PIT38 C22]", "cost\r[PIT38 C23]", "P/L"]]
-        trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if
+        trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cash_flows for cf in self.cash_flows[key] if
                             cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-        trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if cf.count < 0])
+        trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cash_flows for cf in self.cash_flows[key] if cf.count < 0])
         table.append([trade_income, trade_cost, trade_income - trade_cost])
         return table
 
     def get_dividends(self):
         table = [["symbol", "currency", "income", "paid tax", "%"]]
-        for symbol, cashflow in self.cashflows.items():
+        for symbol, cashflow in self.cash_flows.items():
             if cashflow:  # output only items with data
                 income = sum([cf.price for cf in cashflow if cf.type == CashFlowItemType.DIVIDEND])
                 tax = sum([cf.price for cf in cashflow if cf.type == CashFlowItemType.TAX])
@@ -295,13 +181,11 @@ class Account:
 
     def get_dividends_pln(self):
         table = [["income", "paid tax\r[PIT38 G45]", "%", "total to pay (19%)\r[PIT38 G46]", "left to pay (19%)\r[PIT38 G47]"]]
-        income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if cf.type == CashFlowItemType.DIVIDEND])
-        paid_tax = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cashflows for cf in self.cashflows[key] if cf.type == CashFlowItemType.TAX])
+        income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cash_flows for cf in self.cash_flows[key] if cf.type == CashFlowItemType.DIVIDEND])
+        paid_tax = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cash_flows for cf in self.cash_flows[key] if cf.type == CashFlowItemType.TAX])
         if income > 0:
             percent = round(paid_tax / income * 100)
             tax = round(income * Decimal("0.19"), 2)
             left_to_pay = round(tax - paid_tax)
             table.append([income, paid_tax, percent, tax, left_to_pay])
         return table
-
-
