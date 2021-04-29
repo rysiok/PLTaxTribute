@@ -7,8 +7,10 @@ import pytest
 from engine.NBP import NBP
 from engine.exante import ExanteAccount
 
-test_cache_file = ".test_cache"
-transactions_file = r"exante.csv"
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+
+test_cache_file = os.path.join(BASE_DIR, ".test_cache")
+transactions_file = os.path.join(BASE_DIR, "exante.csv")
 
 
 @pytest.fixture
