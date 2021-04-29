@@ -22,7 +22,7 @@ def nbp():
 
 @pytest.fixture
 def nbp_real():
-    return NBP("../.test_real_cache")
+    return NBP(".test_real_cache")
 
 
 @pytest.fixture
