@@ -1,6 +1,6 @@
 Simple python script for Polish tax calculation from foreign income from platforms that don't provide PIT8C form - from Exante, Mintos.
 
-![ci](https://github.com/rysiok/exante_pl_tax/actions/workflows/python-package.yml/badge.svg)
+![ci](https://github.com/rysiok/PLTaxTribute/actions/workflows/python-package.yml/badge.svg)
 
 ### Exante
 Usage: tax.py exante [OPTIONS]
