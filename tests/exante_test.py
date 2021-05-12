@@ -25,7 +25,7 @@ def nbp():
 
 @pytest.fixture
 def nbp_real():
-    return NBP(".test_real_cache")
+    return NBP(os.path.join(BASE_DIR, ".test_real_cache"))
 
 
 @pytest.fixture

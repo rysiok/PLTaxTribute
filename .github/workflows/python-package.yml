@@ -24,9 +24,15 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install pipenv
-      run: pip install pipenv
+    - name: Install dev dependencies
+      run: |
+        pip install pipenv
+        pipenv install --dev
     - name: Test with pytest
       run: |
-        pipenv install --dev
-        pipenv run pytest
+        pipenv run pytest tests/
+    - name: Publish Coverage
+      run: |
+        pipenv run coveralls
+      env:
+        GITHUB_TOKEN: ${{ secrets.COV_TOKEN }}
