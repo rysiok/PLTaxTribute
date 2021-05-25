@@ -3,7 +3,11 @@ from tabulate import tabulate
 
 from engine.exante import ExanteAccount
 from engine.mintos import MintosAccount
-from engine.utils import ls
+from engine.utils import ls, bcolors
+
+
+def warning_handler(e):
+    print(f"{bcolors.WARNING}{e}{bcolors.ENDC}")
 
 
 @click.group(chain=True)
@@ -17,7 +21,7 @@ def cli():
               help="Calculation type")
 def exante(input_file, calculation):
     """Calculates trade income, cost, dividends and paid tax from Exante transaction log, using FIFO approach and D-1 NBP PLN exchange rate."""
-    account = ExanteAccount()
+    account = ExanteAccount(warning_handler)
     account.load_transaction_log(input_file)
     account.init_cash_flow()
     table = None
@@ -50,7 +54,7 @@ def exante(input_file, calculation):
               help="Calculation type")
 def mintos(input_file, calculation):
     """Calculates income and tax from Mintos transaction log, using D-1 NBP PLN exchange rate."""
-    account = MintosAccount()
+    account = MintosAccount(warning_handler)
     account.load_transaction_log(input_file)
     account.init_cash_flow()
     table = None

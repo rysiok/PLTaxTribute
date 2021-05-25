@@ -4,7 +4,7 @@ from typing import List
 
 from engine.account import AccountBase
 from engine.transaction import TransactionSide, TradeTransaction, DividendTransaction, CashFlowItem, CashFlowItemType
-from engine.utils import bcolors
+from engine.utils import bcolors, ParseError
 
 
 # exante transaction log column positions
@@ -32,6 +32,9 @@ class ExanteAccount(AccountBase):
 
     """
 
+    def __init__(self, warning_handler=None):
+        super().__init__(warning_handler)
+
     def load_transaction_log(self, file):
         super()._load_transaction_log(file, "utf=16", '\t', lambda i: i[Column.ID])
 
@@ -43,8 +46,7 @@ class ExanteAccount(AccountBase):
             return
 
         if op_type not in supported_op_types:
-            print(f"{bcolors.WARNING}Unsupported transaction type {op_type}.{bcolors.ENDC}")
-            return
+            raise ParseError(f"Unsupported transaction type {op_type}.")
 
         time = datetime.fromisoformat(row[Column.TIME])
         isin = row[Column.ISIN]
@@ -90,7 +92,7 @@ class ExanteAccount(AccountBase):
             buy = [t for t in tr if t.side == TransactionSide.BUY]
             dividend = [t for t in tr if t.side == TransactionSide.DIVIDEND]
 
-            if not buy:
+            if not buy and not dividend:
                 print(f"{bcolors.WARNING}No BUY transactions for symbol: {symbol}.{bcolors.ENDC}")
                 continue
 

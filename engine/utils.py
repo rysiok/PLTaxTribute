@@ -14,3 +14,7 @@ def ls(text: str):
     text = text.strip() + " "
     print()
     print("* " + text + "*" * (10 - len(text)))
+
+
+class ParseError(Exception):
+    pass
