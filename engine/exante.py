@@ -93,7 +93,7 @@ class ExanteAccount(AccountBase):
             dividend = [t for t in tr if t.side == TransactionSide.DIVIDEND]
 
             if not buy and not dividend:
-                print(f"{bcolors.WARNING}No BUY transactions for symbol: {symbol}.{bcolors.ENDC}")
+                self._warning_handler(f"No BUY transactions for symbol: {symbol}.")
                 continue
 
             cashflow = []

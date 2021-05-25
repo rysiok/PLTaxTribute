@@ -29,8 +29,14 @@ def nbp_real():
 @pytest.fixture
 def nbp_mock():
     class _MockNBP(NBP):
+        def load_cache(self):
+            pass
+
         def get_nbp_day_before(self, currency: str, date: datetime):
             return 2
+
+        def save_cache(self):
+            pass
 
     return _MockNBP()
 

@@ -8,7 +8,7 @@ from engine.transaction import TradeTransaction, TransactionSide, DividendTransa
 from engine.utils import ParseError
 from tests.setup import transactions_file, nbp, nbp_real, account, nbp_mock
 
-_ = (nbp, nbp_real, account,nbp_mock,)
+_ = (nbp, nbp_real, account, nbp_mock,)
 del _
 
 
@@ -108,13 +108,31 @@ def test_parse_transaction_log():
     account = ExanteAccount()
     data = [
         ["1", "", "ABC", "ISIN", "TRADE", "2020-01-01 00:00:00", "150", "ABC", "", ""],
-        ["2", "", "ABC", "None", "TRADE", "2020-01-01 00:00:00", "1500", "USD", "", ""],
         ["3", "", "ABC", "None", "COMMISSION", "2020-01-01 00:00:00", "-3.0", "USD", "", ""],
+        ["2", "", "ABC", "None", "TRADE", "2020-01-01 00:00:00", "1500", "USD", "", ""],
     ]
     account._parse_transaction_log(data, lambda i: i[0])
     tr = account.transaction_log.get("ABC")
     assert tr is not None
     assert len(tr) == 1
+
+
+def test_load_cash_flow(nbp_mock):
+    message = None
+
+    def handler(e):
+        nonlocal message
+        message = e
+
+    account = ExanteAccount(handler)
+    data = [
+        ["1", "", "ABC", "ISIN", "TRADE", "2020-01-01 00:00:00", "-150", "ABC", "", ""],
+        ["2", "", "ABC", "None", "TRADE", "2020-01-01 00:00:00", "1500", "USD", "", ""],
+        ["3", "", "ABC", "None", "COMMISSION", "2020-01-01 00:00:00", "-3.0", "USD", "", ""],
+    ]
+    account._parse_transaction_log(data, lambda i: i[0])
+    account._load_cash_flow(nbp_mock)
+    assert message == f"No BUY transactions for symbol: ABC."
 
 
 def test_get_foreign(account):
@@ -132,7 +150,6 @@ def test_get_foreign(account):
     assert t[1][3] == Decimal("102"), "cost"
     assert t[1][4] == Decimal("-2"), "P/L"
     assert t[1][5] == Decimal("2"), "commission"
-
 
 
 def test_get_pln(account):

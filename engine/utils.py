@@ -18,3 +18,7 @@ def ls(text: str):
 
 class ParseError(Exception):
     pass
+
+
+class CashFlowError(Exception):
+    pass
