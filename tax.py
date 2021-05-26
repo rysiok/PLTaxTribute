@@ -3,7 +3,13 @@ from tabulate import tabulate
 
 from engine.exante import ExanteAccount
 from engine.mintos import MintosAccount
-from engine.utils import ls, bcolors
+from engine.utils import bcolors
+
+
+def ls(text: str):
+    text = text.strip() + " "
+    print()
+    print("* " + text + "*" * (10 - len(text)))
 
 
 def warning_handler(e):
@@ -54,7 +60,7 @@ def exante(input_file, calculation):
               help="Calculation type")
 def mintos(input_file, calculation):
     """Calculates income and tax from Mintos transaction log, using D-1 NBP PLN exchange rate."""
-    account = MintosAccount(warning_handler)
+    account = MintosAccount()
     account.load_transaction_log(input_file)
     account.init_cash_flow()
     table = None

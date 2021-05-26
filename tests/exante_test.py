@@ -92,11 +92,22 @@ def test_parse_transaction_log():
         ["1", "", "ABC", "ISIN", "TRADE", "2020-01-01 00:00:00", "150", "ABC", "", ""],
         ["3", "", "ABC", "None", "COMMISSION", "2020-01-01 00:00:00", "-3.0", "USD", "", ""],
         ["2", "", "ABC", "None", "TRADE", "2020-01-01 00:00:00", "1500", "USD", "", ""],
+        ["4", "", "ABC", "None", "AUTOCONVERSION", "2020-01-01 00:00:00", "1500", "USD", "", ""],
     ]
     account._parse_transaction_log(data, lambda i: i[0])
     tr = account.transaction_log.get("ABC")
     assert tr is not None
     assert len(tr) == 1
+
+
+def test_no_warning():
+    account = ExanteAccount()
+    data = [
+        ["4", "", "ABC", "None", "AUTOCONVERSION", "2020-01-01 00:00:00", "1500", "USD", "", ""],
+    ]
+    account._parse_transaction_log(data, lambda i: i[0])
+    tr = account.transaction_log.get("ABC")
+    assert tr is None
 
 
 def test_load_transaction_log(capfd):
@@ -123,6 +134,7 @@ def test_load_cash_flow(nbp_mock):
     account._load_cash_flow(nbp_mock)
     assert message == f"No BUY transactions for symbol: ABC."
     assert len(account.cash_flows) == 0
+
 
 def test_get_foreign(exante_account):
     t = exante_account.get_foreign()[1:]  # skip header

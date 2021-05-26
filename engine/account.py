@@ -44,13 +44,13 @@ class AccountBase(metaclass=ABCMeta):
         nbp.save_cache()
 
     @abstractmethod
-    def load_transaction_log(self, file):
+    def load_transaction_log(self, file):  # pragma: no cover
         pass
 
     @abstractmethod
-    def _parse(self, row: List[str]):
+    def _parse(self, row: List[str]):  # pragma: no cover
         pass
 
     @abstractmethod
-    def _load_cash_flow(self, nbp):
+    def _load_cash_flow(self, nbp):  # pragma: no cover
         pass

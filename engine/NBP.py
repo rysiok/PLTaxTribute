@@ -4,6 +4,8 @@ from decimal import Decimal
 import requests
 import simplejson as json
 
+from engine.utils import ExchangeRateNotFound
+
 
 class NBP:
     cache = {}
@@ -34,11 +36,13 @@ class NBP:
         hit = self.cache.get(hash, None)
         if hit:
             return hit
-
-        while True:
+        count = 10
+        while count:
             response = requests.get(r"https://api.nbp.pl/api/exchangerates/rates/a/%s/%s?format=json" % (currency, exchange_date))
             if response.status_code == 200:
                 data = round(Decimal(response.json()["rates"][0]["mid"]), 4)
                 self.cache[hash] = data
                 return data
             exchange_date = exchange_date - timedelta(days=1)
+            count -= 1
+        raise ExchangeRateNotFound

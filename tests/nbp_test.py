@@ -2,7 +2,10 @@ import os
 from datetime import datetime
 from decimal import Decimal
 
+import pytest
+
 from engine.NBP import NBP
+from engine.utils import ExchangeRateNotFound
 from tests.setup import test_cache_file, nbp
 
 _ = (nbp,)
@@ -29,3 +32,9 @@ def test_save_load_cache(nbp: NBP):
 def test_get_nbp_day_before(nbp: NBP):
     assert nbp.get_nbp_day_before("USD", datetime.fromisoformat("2021-04-04")) == Decimal("3.8986"), "Should be Decimal(3.8986)"
     assert nbp.cache.get("2021-04-04 USD") == Decimal("3.8986"), "Should be Decimal(3.8986) from cache"
+
+
+def test_exchange_rate_not_found(nbp: NBP):
+    with pytest.raises(ExchangeRateNotFound):
+        nbp.get_nbp_day_before("xUSD", datetime.fromisoformat("2021-04-04"))
+

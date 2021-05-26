@@ -1,7 +1,7 @@
 Date,"Transaction ID:",Details,Turnover,Balance,Currency
-"2020-01-01 00:00:01", 1, "Loan 21157138-01 - interest received", 2.5E-5, "", EUR
-"2020-01-01 00:00:02", 1, "Loan 21157138-01 - late fees received", 1.25E-5, "", EUR
-"2020-01-01 00:00:07", 1, "Loan 21157138-01 - late fees received", 2.85E-3, "", EUR
-"2020-01-01 00:00:03", 1, "Loan 21157138-01 - interest received", 20.000000, "", EUR
-"2020-01-01 00:00:04", 1, "Loan 21157138-01 - secondary market fee", 20.000000, "", EUR
-"2020-01-01 00:00:05", 1, "Loan 21157138-01 - discount/premium for secondary market transaction", 20.000000, "", EUR
+"2020-01-01 00:00:01",1,"Loan 21157138-01 - interest received",2.5E-5,"",EUR
+"2020-01-01 00:00:02",1,"Loan 21157138-01 - late fees received",1.25E-5,"",EUR
+"2020-01-01 00:00:07",1,"Loan 21157138-01 - late fees received",2.85E-3,"",EUR
+"2020-01-01 00:00:03",1,"Loan 21157138-01 - interest received",20.000000,"",EUR
+"2020-01-01 00:00:04",1,"Loan 21157138-01 - secondary market fee",20.000000,"",EUR
+"2020-01-01 00:00:05",1,"Loan 21157138-01 - discount/premium for secondary market transaction",20.000000,"",EUR

@@ -10,15 +10,9 @@ class bcolors:
     UNDERLINE = '\033[4m'
 
 
-def ls(text: str):
-    text = text.strip() + " "
-    print()
-    print("* " + text + "*" * (10 - len(text)))
-
-
 class ParseError(Exception):
     pass
 
 
-class CashFlowError(Exception):
+class ExchangeRateNotFound(Exception):
     pass
