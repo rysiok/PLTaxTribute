@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from decimal import Decimal
 
@@ -6,9 +7,10 @@ import pytest
 from engine.exante import ExanteAccount
 from engine.transaction import TradeTransaction, TransactionSide, DividendTransaction
 from engine.utils import ParseError
-from tests.setup import transactions_file, nbp, nbp_real, account, nbp_mock
+from tests import BASE_DIR
+from tests.setup import nbp, nbp_real, exante_account, nbp_mock
 
-_ = (nbp, nbp_real, account, nbp_mock,)
+_ = (nbp, nbp_real, exante_account, nbp_mock,)
 del _
 
 
@@ -97,24 +99,11 @@ def test_parse_transaction_log():
     assert len(tr) == 1
 
 
-def test_load_transaction_log(capfd, nbp):
+def test_load_transaction_log(capfd):
     account = ExanteAccount(lambda e: print(e))
-    account.load_transaction_log(transactions_file)
+    account.load_transaction_log(os.path.join(BASE_DIR, "exante.csv"))
     captured = capfd.readouterr()
     assert "Unsupported transaction type AUTOCONVERSION." in captured.out
-
-
-def test_parse_transaction_log():
-    account = ExanteAccount()
-    data = [
-        ["1", "", "ABC", "ISIN", "TRADE", "2020-01-01 00:00:00", "150", "ABC", "", ""],
-        ["3", "", "ABC", "None", "COMMISSION", "2020-01-01 00:00:00", "-3.0", "USD", "", ""],
-        ["2", "", "ABC", "None", "TRADE", "2020-01-01 00:00:00", "1500", "USD", "", ""],
-    ]
-    account._parse_transaction_log(data, lambda i: i[0])
-    tr = account.transaction_log.get("ABC")
-    assert tr is not None
-    assert len(tr) == 1
 
 
 def test_load_cash_flow(nbp_mock):
@@ -133,10 +122,10 @@ def test_load_cash_flow(nbp_mock):
     account._parse_transaction_log(data, lambda i: i[0])
     account._load_cash_flow(nbp_mock)
     assert message == f"No BUY transactions for symbol: ABC."
+    assert len(account.cash_flows) == 0
 
-
-def test_get_foreign(account):
-    t = account.get_foreign()[1:]  # skip header
+def test_get_foreign(exante_account):
+    t = exante_account.get_foreign()[1:]  # skip header
     assert len(t) == 2
     assert t[0][0] == 'ABC', "symbol"
     assert t[0][2] == Decimal("1000"), "income"
@@ -152,8 +141,8 @@ def test_get_foreign(account):
     assert t[1][5] == Decimal("2"), "commission"
 
 
-def test_get_pln(account):
-    t = account.get_pln()[1:]  # skip header
+def test_get_pln(exante_account):
+    t = exante_account.get_pln()[1:]  # skip header
     assert len(t) == 4
     assert t[0][0] == 'ABC', "symbol"
     assert t[0][1] == Decimal("2000"), "income"
@@ -180,8 +169,8 @@ def test_get_pln(account):
     assert t[0][3] + t[1][3] == Decimal("988"), "P/L"
 
 
-def test_get_pln_total(account):
-    t = account.get_pln_total()[1:]  # skip header
+def test_get_pln_total(exante_account):
+    t = exante_account.get_pln_total()[1:]  # skip header
     assert len(t) == 1
     assert t[0][0] == Decimal("2200"), "income"
     assert t[0][1] == Decimal("1212"), "cost"
@@ -189,8 +178,8 @@ def test_get_pln_total(account):
     assert t[0][0] - t[0][1] == t[0][2], "P/L"
 
 
-def test_dividends(account):
-    t = account.get_dividends()[1:]  # skip header
+def test_dividends(exante_account):
+    t = exante_account.get_dividends()[1:]  # skip header
     assert len(t) == 1
     assert t[0][0] == 'QQQ', "symbol"
     assert t[0][2] == Decimal("60.10"), "income"
@@ -198,8 +187,8 @@ def test_dividends(account):
     assert round(t[0][3] / t[0][2] * 100) == Decimal("4"), "%"
 
 
-def test_dividends_pln(account):
-    t = account.get_dividends_pln()[1:]  # skip header
+def test_dividends_pln(exante_account):
+    t = exante_account.get_dividends_pln()[1:]  # skip header
     assert len(t) == 1
     assert t[0][0] == Decimal("120.20"), "income"
     assert t[0][1] == Decimal("4.40"), "paid tax"

@@ -27,9 +27,6 @@ class MintosAccount(AccountBase):
 
     """
 
-    def __init__(self, warning_handler=None):
-        super().__init__(warning_handler)
-
     def load_transaction_log(self, file):
         super()._load_transaction_log(file, "ASCII", ',', lambda i: i[Column.TIME])
 
