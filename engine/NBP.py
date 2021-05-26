@@ -15,14 +15,14 @@ class NBP:
         try:
             with open(self.cache_file, "w") as f:
                 json.dump(self.cache, f)
-        except OSError:
+        except OSError:  # pragma: no cover
             pass
 
     def load_cache(self):
         try:
             with open(self.cache_file, "rb") as f:
                 self.cache = {k: round(Decimal(v), 4) for k, v in json.load(f).items()}
-        except OSError:
+        except OSError:  # pragma: no cover
             pass
 
     def get_nbp_day_before(self, currency: str, date: datetime):
