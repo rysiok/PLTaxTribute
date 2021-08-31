@@ -2,13 +2,32 @@ import os
 from datetime import datetime
 from decimal import Decimal
 
+import pytest
+
 from engine.mintos import MintosAccount
 from engine.transaction import DividendTransaction
 from tests import BASE_DIR
-from tests.setup import nbp, nbp_real, mintos_account, nbp_mock
+from tests.setup import nbp, nbp_real, nbp_mock
 
-_ = (nbp, nbp_real, mintos_account, nbp_mock,)
+_ = (nbp, nbp_real, nbp_mock,)
 del _
+
+
+@pytest.fixture
+def mintos_account(nbp_mock):
+    account = MintosAccount()
+    data = [
+        ["2020-01-01 00:00:01", "1", "Loan 21157138-01 - interest received", "2.5E-5", "", "EUR"],
+        ["2020-01-01 00:00:02", "1", "Loan 21157138-01 - late fees received", "1.25E-5", "", "EUR"],
+        ["2020-01-01 00:00:07", "1", "Loan 21157138-01 - late fees received", "2.85E-3", "", "EUR"],
+        ["2020-01-01 00:00:03", "1", "Loan 21157138-01 - interest received", "20.000000", "", "EUR"],
+        ["2020-01-01 00:00:04", "1", "Loan 21157138-01 - secondary market fee", "20.000000", "", "EUR"],
+        ["2020-01-01 00:00:05", "1", "Loan 21157138-01 - discount/premium for secondary market transaction", "20.000000", "", "EUR"],
+    ]
+
+    account._parse_transaction_log(data)
+    account.init_cash_flow(nbp_mock)
+    return account
 
 
 def test_parser():

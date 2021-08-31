@@ -8,10 +8,37 @@ from engine.exante import ExanteAccount
 from engine.transaction import TradeTransaction, TransactionSide, DividendTransaction
 from engine.utils import ParseError
 from tests import BASE_DIR
-from tests.setup import nbp, nbp_real, exante_account, nbp_mock
+from tests.setup import nbp, nbp_real, nbp_mock
 
-_ = (nbp, nbp_real, exante_account, nbp_mock,)
+_ = (nbp, nbp_real, nbp_mock,)
 del _
+
+
+@pytest.fixture
+def exante_account(nbp_mock):
+    account = ExanteAccount()
+    data = [
+        ["01", "", "ABC", "ISIN", "TRADE", "2020-01-01 00:00:00", "150", "ABC", "", ""],
+        ["02", "", "ABC", "None", "TRADE", "2020-01-01 00:00:00", "1500", "USD", "", ""],
+        ["03", "", "ABC", "None", "COMMISSION", "2020-01-01 00:00:00", "-3.0", "USD", "", ""],
+        ["04", "", "ABC", "ISIN", "TRADE", "2020-02-01 00:00:00", "-50", "ABC", "", ""],
+        ["05", "", "ABC", "None", "TRADE", "2020-02-01 00:00:00", "1000", "USD", "", ""],
+        ["06", "", "ABC", "None", "COMMISSION", "2020-02-01 00:00:00", "-3.0", "USD", "", ""],
+
+        ["07", "", "XYZ", "ISIN", "TRADE", "2020-01-01 00:00:00", "10", "XYZ", "", ""],
+        ["08", "", "XYZ", "None", "TRADE", "2020-01-01 00:00:00", "100", "USD", "", ""],
+        ["09", "", "XYZ", "None", "COMMISSION", "2020-01-01 00:00:00", "1", "USD", "", ""],
+        ["10", "", "XYZ", "ISIN", "TRADE", "2020-02-01 00:00:00", "-10", "XYZ", "", ""],
+        ["11", "", "XYZ", "None", "TRADE", "2020-02-01 00:00:00", "100", "USD", "", ""],
+        ["12", "", "XYZ", "None", "COMMISSION", "2020-02-01 00:00:00", "1", "USD", "", ""],
+
+        ["13", "", "QQQ", "None", "DIVIDEND", "2020-01-01 00:00:00", "60.10", "USD", "", ""],
+        ["14", "", "QQQ", "None", "TAX", "2020-01-01 00:00:00", "-2.2", "USD", "", ""],
+    ]
+
+    account._parse_transaction_log(data)
+    account.init_cash_flow(nbp_mock)
+    return account
 
 
 def test_parser_skip_op_types():
@@ -98,16 +125,6 @@ def test_parse_transaction_log():
     tr = account.transaction_log.get("ABC")
     assert tr is not None
     assert len(tr) == 1
-
-
-def test_no_warning():
-    account = ExanteAccount()
-    data = [
-        ["4", "", "ABC", "None", "AUTOCONVERSION", "2020-01-01 00:00:00", "1500", "USD", "", ""],
-    ]
-    account._parse_transaction_log(data, lambda i: i[0])
-    tr = account.transaction_log.get("ABC")
-    assert tr is None
 
 
 def test_load_transaction_log(capfd):
