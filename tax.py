@@ -3,7 +3,7 @@ from tabulate import tabulate
 
 from engine.exante import ExanteAccount
 from engine.mintos import MintosAccount
-from engine.utils import bcolors
+from engine.utils import bcolors, Mutex
 
 
 def ls(text: str):
@@ -22,13 +22,17 @@ def cli():
 
 
 @cli.command()
-@click.option('-i', '--input-file', required=True, help='Transaction log file name.')
+@click.option('-i', '--input-file', help='Transaction log file name.', cls=Mutex, not_required_if=["input_directory"])
+@click.option('-d', '--input-directory', help='Directory containing transaction log file names (csv|txt extension).', cls=Mutex, not_required_if=["input_file"])
 @click.option('-c', '--calculation', required=True, multiple=True, type=click.Choice(['TRADE', 'TRADE_PLN', 'DIVIDEND', 'DIVIDEND_PLN'], case_sensitive=False),
               help="Calculation type")
-def exante(input_file, calculation):
+def exante(input_file, input_directory, calculation):
     """Calculates trade income, cost, dividends and paid tax from Exante transaction log, using FIFO approach and D-1 NBP PLN exchange rate."""
     account = ExanteAccount(warning_handler)
-    account.load_transaction_log(input_file)
+    if input_file:
+        account.load_transaction_log(input_file)
+    else:
+        account.load_transaction_logs(input_directory)
     account.init_cash_flow()
     table = None
     for c in calculation:
@@ -55,13 +59,17 @@ def exante(input_file, calculation):
 
 
 @cli.command()
-@click.option('-i', '--input-file', required=True, help='Transaction log file name.')
+@click.option('-i', '--input-file', help='Transaction log file name.', cls=Mutex, not_required_if=["input_directory"])
+@click.option('-d', '--input-directory', help='Directory containing transaction log file names.', cls=Mutex, not_required_if=["input_file"])
 @click.option('-c', '--calculation', required=True, multiple=True, type=click.Choice(['INCOME', 'INCOME_PLN'], case_sensitive=False),
               help="Calculation type")
-def mintos(input_file, calculation):
+def mintos(input_file, input_directory, calculation):
     """Calculates income and tax from Mintos transaction log, using D-1 NBP PLN exchange rate."""
     account = MintosAccount()
-    account.load_transaction_log(input_file)
+    if input_file:
+        account.load_transaction_log(input_file)
+    else:
+        account.load_transaction_logs(input_directory)
     account.init_cash_flow()
     table = None
     for c in calculation:

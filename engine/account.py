@@ -1,4 +1,5 @@
 import csv
+import os
 from abc import ABCMeta, abstractmethod
 from typing import List
 
@@ -23,6 +24,12 @@ class AccountBase(metaclass=ABCMeta):
             next(reader, None)  # skip header
             return [row for row in reader]
 
+    @staticmethod
+    def _load_transaction_logs(directory, single_file_loader):
+        for entry in os.scandir(directory):
+            if (entry.path.endswith(".csv") or entry.path.endswith(".txt")) and entry.is_file():
+                single_file_loader(entry.path)
+
     def _load_transaction_log(self, file, encoding, delimiter, sort_by=None):
         rows = AccountBase.load_csv_file(file, encoding, delimiter)
         self._parse_transaction_log(rows, sort_by)
@@ -46,6 +53,9 @@ class AccountBase(metaclass=ABCMeta):
     @abstractmethod
     def load_transaction_log(self, file):  # pragma: no cover
         pass
+
+    def load_transaction_logs(self, directory):  # pragma: no cover
+        self._load_transaction_logs(directory, self.load_transaction_log)
 
     @abstractmethod
     def _parse(self, row: List[str]):  # pragma: no cover

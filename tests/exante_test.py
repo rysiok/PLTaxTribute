@@ -134,6 +134,12 @@ def test_load_transaction_log(capfd):
     assert "Unsupported transaction type AUTOCONVERSION." in captured.out
 
 
+def test_load_transaction_logs(capfd):
+    account = ExanteAccount(lambda e: print(e))
+    account.load_transaction_logs(os.path.join(BASE_DIR, "multi"))
+    assert len(account.transaction_log['XYZ']) == 2
+
+
 def test_load_cash_flow(nbp_mock):
     message = None
 
