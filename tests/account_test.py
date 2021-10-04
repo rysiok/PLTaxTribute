@@ -1,20 +1,29 @@
 import os
+
 from engine.account import AccountBase
 from engine.utils import ParseError
 from tests import BASE_DIR
 
 
 class TestAccount(AccountBase):
+    tr_log = 0
+
     def _parse(self, row):
         if row == 666:
             raise ParseError("666")
         self.transaction_log[str(row)] = row
 
     def load_transaction_log(self, file):
-        pass
+        self.tr_log += 1
 
     def _load_cash_flow(self, nbp):
         pass
+
+
+def test_load_transaction_logs():
+    account = TestAccount()
+    account.load_transaction_logs(os.path.join(BASE_DIR, "multi"))
+    assert account.tr_log == 2
 
 
 def test_load_csv_file():
