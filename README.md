@@ -1,6 +1,6 @@
 Simple python script for Polish tax calculation from foreign income from platforms that don't provide PIT8C form - from Exante, Mintos.
 
-![ci](https://github.com/rysiok/PLTaxTribute/actions/workflows/python-package.yml/badge.svg) [![Coverage Status](https://coveralls.io/repos/github/rysiok/PLTaxTribute/badge.svg)](https://coveralls.io/github/rysiok/PLTaxTribute) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![ci](https://github.com/rysiok/PLTaxTribute/actions/workflows/python-package.yml/badge.svg) [![Coverage Status](https://coveralls.io/repos/github/rysiok/PLTaxTribute/badge.svg)](https://coveralls.io/github/rysiok/PLTaxTribute) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Total alerts](https://img.shields.io/lgtm/alerts/g/rysiok/PLTaxTribute.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/rysiok/PLTaxTribute/alerts/) [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/rysiok/PLTaxTribute.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/rysiok/PLTaxTribute/context:python)
 
 ### Exante
 Usage: tax.py exante [OPTIONS]
