@@ -4,7 +4,7 @@ from typing import List
 
 from engine.account import AccountBase
 from engine.transaction import TransactionSide, TradeTransaction, DividendTransaction, CashFlowItem, CashFlowItemType
-from engine.utils import bcolors, ParseError
+from engine.utils import ParseError
 
 
 # exante transaction log column positions
