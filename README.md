@@ -10,7 +10,8 @@ Usage: tax.py exante [OPTIONS]
 
 Options:
 
-    -i, --input-file TEXT                                       Transaction log file name.  [required]
+    -i, --input-file TEXT                                       Transaction log file name. [option is mutually exclusive with input_directory]
+    -d, --input-directory TEXT                                  Directory containing transaction log file names (csv|txt extension). [option is mutually exclusive with input_file]
     -c, --calculation [TRADE|TRADE_PLN|DIVIDEND|DIVIDEND_PLN]   Calculation type  [required]
 
 ### Mintos
@@ -21,7 +22,8 @@ Usage: tax.py mintos [OPTIONS]
 
 Options:
     
-    -i, --input-file TEXT                   Transaction log file name.  [required]
+    -i, --input-file TEXT                   Transaction log file name.  [option is mutually exclusive with input_directory]
+    -d, --input-directory TEXT              Directory containing transaction log file names (csv|txt extension). [option is mutually exclusive with input_file]
     -c, --calculation [INCOME|INCOME_PLN]   Calculation type  [required]
 
 
