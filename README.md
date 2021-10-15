@@ -29,7 +29,7 @@ Options:
 
 ## TODO:
 
-- multifile transaction log
+- ~~multifile transaction log~~
 - multiyear support
 - multiyear cache and opt
 - PIT/ZG support
