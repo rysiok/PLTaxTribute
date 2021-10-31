@@ -87,6 +87,10 @@ class ExanteAccount(AccountBase):
             return
 
     def _load_cash_flow(self, nbp):
+        #
+        # self.cash_flows = {year: {'symbol': [cash_flow_item,...],...},...}
+        #
+
         for symbol, tr in self.transaction_log.items():
             sell = [t for t in tr if t.side == TransactionSide.SELL]
             buy = [t for t in tr if t.side == TransactionSide.BUY]
@@ -96,50 +100,59 @@ class ExanteAccount(AccountBase):
                 self._warning_handler(f"No BUY transactions for symbol: {symbol}.")
                 continue
 
-            cashflow = []
+            def _cf(year: int, symbol: str):
+                if year not in self.cash_flows:
+                    self.cash_flows[year] = {}
+                if symbol not in self.cash_flows[year]:
+                    self.cash_flows[year][symbol] = []
+                return self.cash_flows[year][symbol]
+
             for s in sell:
                 pln = nbp.get_nbp_day_before(s.currency, s.time)
-                cashflow.append(CashFlowItem(CashFlowItemType.TRADE, s.time, s.count, s.price, s.currency, pln))
-                cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, s.time, -1, s.commission, s.currency, pln))
+                cf = _cf(s.time.year, symbol)
+                cf.append(CashFlowItem(CashFlowItemType.TRADE, s.time, s.count, s.price, s.currency, pln))
+                cf.append(CashFlowItem(CashFlowItemType.COMMISSION, s.time, -1, s.commission, s.currency, pln))
 
                 while s.count and buy:
                     b = buy[0]
                     b.count -= s.count
                     pln = nbp.get_nbp_day_before(s.currency, b.time)
                     if b.count <= 0:  # more to sell or everything sold
-                        cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -(b.count + s.count), b.price, s.currency, pln))
-                        cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, b.commission, s.currency, pln))  # full cost
+                        cf.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -(b.count + s.count), b.price, s.currency, pln))
+                        cf.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, b.commission, s.currency, pln))  # full cost
                         s.count = -b.count  # left count
                         del buy[0]  # remove matching buy transaction
                     else:  # partial sell
-                        cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -s.count, b.price, s.currency, pln))
+                        cf.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -s.count, b.price, s.currency, pln))
                         ratio = Decimal(s.count / (s.count + b.count))
                         commission = round(b.commission * ratio, 2)
-                        cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, commission, s.currency,
-                                                     nbp.get_nbp_day_before(s.currency, s.time)))  # partial cost
+                        cf.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, commission, s.currency,
+                                               nbp.get_nbp_day_before(s.currency, s.time)))  # partial cost
                         b.commission -= commission
                         break
             for d in dividend:
                 pln = nbp.get_nbp_day_before(d.currency, d.time)
-                cashflow.append(CashFlowItem(CashFlowItemType.DIVIDEND, d.time, 1, d.value, d.currency, pln))
-                cashflow.append(CashFlowItem(CashFlowItemType.TAX, d.time, 1, d.tax, d.currency, pln))
-
-            self.cash_flows[symbol] = cashflow
+                cf = _cf(d.time.year, symbol)
+                cf.append(CashFlowItem(CashFlowItemType.DIVIDEND, d.time, 1, d.value, d.currency, pln))
+                cf.append(CashFlowItem(CashFlowItemType.TAX, d.time, 1, d.tax, d.currency, pln))
 
     def get_foreign(self):
-        table = [["symbol", "currency", "income", "cost", "P/L", "(commission)"]]
-        for symbol, cashflow in self.cash_flows.items():
-            if cashflow:  # output only items with data
-                trade_income = sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-                if trade_income:
-                    trade_cost = -sum([cf.count * cf.price for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
-                    commission_cost = -sum([cf.count * cf.price for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
-                    assert sum(
-                        [cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.COMMISSION]) == 0, f"commission_cost != 0"
+        table = [["symbol", "year", "currency", "income", "cost", "P/L", "(commission)"]]
+        for year in self.cash_flows:
+            table.append([year, " ", " ", " ", " ", " "])
 
-                    table.append(
-                        [symbol, cashflow[0].currency, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost,
-                         commission_cost])
+            for symbol, cash_flow in self.cash_flows[year].items():
+                if cash_flow:  # output only items with data
+                    trade_income = sum([cf.count * cf.price for cf in cash_flow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+                    if trade_income:
+                        trade_cost = -sum([cf.count * cf.price for cf in cash_flow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
+                        commission_cost = -sum([cf.count * cf.price for cf in cash_flow if cf.type == CashFlowItemType.COMMISSION])
+                        assert sum(
+                            [cf.count * cf.price for cf in cash_flow if cf.count > 0 and cf.type == CashFlowItemType.COMMISSION]) == 0, f"commission_cost != 0"
+
+                        table.append(
+                            [symbol, cash_flow[0].currency, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost,
+                             commission_cost])
         return table
 
     def get_pln(self):
@@ -191,3 +204,6 @@ class ExanteAccount(AccountBase):
             left_to_pay = round(tax - paid_tax)
             table.append([income, paid_tax, percent, tax, left_to_pay])
         return table
+
+    def _get_years(self):
+        self.years = list({x.time.year for cf in self.cash_flows.values() for x in cf})

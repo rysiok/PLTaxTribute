@@ -6,7 +6,7 @@ Simple python script for Polish tax calculation from foreign income from platfor
 Usage: tax.py exante [OPTIONS]
 
     Calculates trade income, cost, dividends and paid tax from Exante
-    transaction log, using FIFO approach and D-1 NBP PLN exchange rate.
+    financial transaction log, using FIFO approach and D-1 NBP PLN exchange rate.
 
 Options:
 

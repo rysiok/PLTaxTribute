@@ -28,9 +28,9 @@ def exante_account(nbp_mock):
         ["07", "", "XYZ", "ISIN", "TRADE", "2020-01-01 00:00:00", "10", "XYZ", "", ""],
         ["08", "", "XYZ", "None", "TRADE", "2020-01-01 00:00:00", "100", "USD", "", ""],
         ["09", "", "XYZ", "None", "COMMISSION", "2020-01-01 00:00:00", "1", "USD", "", ""],
-        ["10", "", "XYZ", "ISIN", "TRADE", "2020-02-01 00:00:00", "-10", "XYZ", "", ""],
-        ["11", "", "XYZ", "None", "TRADE", "2020-02-01 00:00:00", "100", "USD", "", ""],
-        ["12", "", "XYZ", "None", "COMMISSION", "2020-02-01 00:00:00", "1", "USD", "", ""],
+        ["10", "", "XYZ", "ISIN", "TRADE", "2021-02-01 00:00:00", "-10", "XYZ", "", ""],
+        ["11", "", "XYZ", "None", "TRADE", "2021-02-01 00:00:00", "100", "USD", "", ""],
+        ["12", "", "XYZ", "None", "COMMISSION", "2021-02-01 00:00:00", "1", "USD", "", ""],
 
         ["13", "", "QQQ", "None", "DIVIDEND", "2020-01-01 00:00:00", "60.10", "USD", "", ""],
         ["14", "", "QQQ", "None", "TAX", "2020-01-01 00:00:00", "-2.2", "USD", "", ""],
@@ -127,6 +127,22 @@ def test_parse_transaction_log():
     assert len(tr) == 1
 
 
+def test_parse_transaction_log_multi_year():
+    account = ExanteAccount()
+    data = [
+        ["1", "", "ABC", "ISIN", "TRADE", "2020-01-01 00:00:00", "150", "ABC", "", ""],
+        ["2", "", "ABC", "None", "TRADE", "2020-01-01 00:00:00", "1500", "USD", "", ""],
+        ["3", "", "ABC", "None", "COMMISSION", "2020-01-01 00:00:00", "-3.0", "USD", "", ""],
+        ["4", "", "ABC", "ISIN", "TRADE", "2021-01-01 00:00:00", "150", "ABC", "", ""],
+        ["5", "", "ABC", "None", "TRADE", "2021-01-01 00:00:00", "1500", "USD", "", ""],
+        ["6", "", "ABC", "None", "COMMISSION", "2021-01-01 00:00:00", "-3.0", "USD", "", ""],
+    ]
+    account._parse_transaction_log(data, lambda i: i[0])
+    tr = account.transaction_log.get("ABC")
+    assert tr is not None
+    assert len(tr) == 2
+
+
 def test_load_transaction_log(capfd):
     account = ExanteAccount(lambda e: print(e))
     account.load_transaction_log(os.path.join(BASE_DIR, "exante.csv"))
@@ -140,7 +156,7 @@ def test_load_transaction_logs(capfd):
     assert len(account.transaction_log['XYZ']) == 2
 
 
-def test_load_cash_flow(nbp_mock):
+def test_load_cash_flow_no_buy(nbp_mock):
     message = None
 
     def handler(e):
@@ -159,21 +175,68 @@ def test_load_cash_flow(nbp_mock):
     assert len(account.cash_flows) == 0
 
 
+def test_load_cash_flow(nbp_mock):
+    account = ExanteAccount()
+    data = [
+        ["1", "", "ABC", "ISIN", "TRADE", "2020-01-01 00:00:00", "150", "ABC", "", ""],
+        ["2", "", "ABC", "None", "TRADE", "2020-01-01 00:00:00", "1500", "USD", "", ""],
+        ["3", "", "ABC", "None", "COMMISSION", "2020-01-01 00:00:00", "-3.0", "USD", "", ""],
+        ["4", "", "ABC", "ISIN", "TRADE", "2021-01-01 00:00:00", "-150", "ABC", "", ""],
+        ["5", "", "ABC", "None", "TRADE", "2021-01-01 00:00:00", "1500", "USD", "", ""],
+        ["6", "", "ABC", "None", "COMMISSION", "2021-01-01 00:00:00", "-3.0", "USD", "", ""],
+    ]
+    account._parse_transaction_log(data, lambda i: i[0])
+    account._load_cash_flow(nbp_mock)
+    assert len(account.cash_flows) == 1
+    assert 'ABC' in account.cash_flows[2021].keys()
+    assert len(account.cash_flows[2021]['ABC']) == 4
+
+
+def test_load_cash_flow_multi_year(nbp_mock):
+    account = ExanteAccount()
+    data = [
+        ["1", "", "ABC", "ISIN", "TRADE", "2020-01-01 00:00:00", "150", "ABC", "", ""],
+        ["2", "", "ABC", "None", "TRADE", "2020-01-01 00:00:00", "1500", "USD", "", ""],
+        ["3", "", "ABC", "None", "COMMISSION", "2020-01-01 00:00:00", "-3.0", "USD", "", ""],
+        ["4", "", "ABC", "ISIN", "TRADE", "2020-01-01 00:00:00", "-50", "ABC", "", ""],
+        ["5", "", "ABC", "None", "TRADE", "2020-01-01 00:00:00", "500", "USD", "", ""],
+        ["6", "", "ABC", "None", "COMMISSION", "2020-01-01 00:00:00", "-1.0", "USD", "", ""],
+        ["7", "", "ABC", "ISIN", "TRADE", "2021-01-01 00:00:00", "-100", "ABC", "", ""],
+        ["8", "", "ABC", "None", "TRADE", "2021-01-01 00:00:00", "1000", "USD", "", ""],
+        ["9", "", "ABC", "None", "COMMISSION", "2021-01-01 00:00:00", "-2.0", "USD", "", ""],
+    ]
+    account._parse_transaction_log(data, lambda i: i[0])
+    account._load_cash_flow(nbp_mock)
+    assert len(account.cash_flows) == 2
+    assert 'ABC' in account.cash_flows[2020].keys()
+    assert 'ABC' in account.cash_flows[2021].keys()
+    assert len(account.cash_flows[2020]['ABC']) == 4
+    assert len(account.cash_flows[2021]['ABC']) == 4
+
+
 def test_get_foreign(exante_account):
     t = exante_account.get_foreign()[1:]  # skip header
-    assert len(t) == 2
-    assert t[0][0] == 'ABC', "symbol"
-    assert t[0][2] == Decimal("1000"), "income"
-    assert t[0][3] == Decimal("504"), "cost"
-    assert t[0][4] == Decimal("496"), "P/L"
-    assert t[0][5] == Decimal("4"), "commission"
-    assert t[0][2] - t[0][3] == Decimal("496"), "P/L"
+    assert len(t) == 4
+    idx = 0
+    assert t[idx][0] == 2020, "year"
 
-    assert t[1][0] == 'XYZ', "symbol"
-    assert t[1][2] == Decimal("100"), "income"
-    assert t[1][3] == Decimal("102"), "cost"
-    assert t[1][4] == Decimal("-2"), "P/L"
-    assert t[1][5] == Decimal("2"), "commission"
+    idx += 1
+    assert t[idx][0] == 'ABC', "symbol"
+    assert t[idx][2] == Decimal("1000"), "income"
+    assert t[idx][3] == Decimal("504"), "cost"
+    assert t[idx][4] == Decimal("496"), "P/L"
+    assert t[idx][5] == Decimal("4"), "commission"
+    assert t[idx][2] - t[idx][3] == Decimal("496"), "P/L"
+
+    idx += 1
+    assert t[idx][0] == 2021, "year"
+
+    idx += 1
+    assert t[idx][0] == 'XYZ', "symbol"
+    assert t[idx][2] == Decimal("100"), "income"
+    assert t[idx][3] == Decimal("102"), "cost"
+    assert t[idx][4] == Decimal("-2"), "P/L"
+    assert t[idx][5] == Decimal("2"), "commission"
 
 
 def test_get_pln(exante_account):
