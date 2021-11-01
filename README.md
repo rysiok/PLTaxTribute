@@ -27,6 +27,10 @@ Options:
     -c, --calculation [INCOME|INCOME_PLN]   Calculation type  [required]
 
 
+## Requirments:
+ - python >= 3.8 (tested on 3.8, 3.9, 3.10)
+
+
 ## TODO:
 
 - ~~multifile transaction log~~
