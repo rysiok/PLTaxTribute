@@ -34,6 +34,8 @@ def exante_account(nbp_mock):
 
         ["13", "", "QQQ", "None", "DIVIDEND", "2020-01-01 00:00:00", "60.10", "USD", "", ""],
         ["14", "", "QQQ", "None", "TAX", "2020-01-01 00:00:00", "-2.2", "USD", "", ""],
+        ["15", "", "QQQ", "None", "DIVIDEND", "2021-01-01 00:00:00", "120.2", "USD", "", ""],
+        ["16", "", "QQQ", "None", "TAX", "2021-01-01 00:00:00", "-4.4", "USD", "", ""],
     ]
 
     account._parse_transaction_log(data)
@@ -241,55 +243,88 @@ def test_get_foreign(exante_account):
 
 def test_get_pln(exante_account):
     t = exante_account.get_pln()[1:]  # skip header
-    assert len(t) == 4
-    assert t[0][0] == 'ABC', "symbol"
-    assert t[0][1] == Decimal("2000"), "income"
-    assert t[0][2] == Decimal("1008"), "cost"
-    assert t[0][3] == Decimal("992"), "P/L"
-    assert t[0][4] == Decimal("8"), "commission"
-    assert t[0][1] - t[0][2] == t[0][3], "P/L"
+    assert len(t) == 8
 
-    assert t[1][0] == 'XYZ', "symbol"
-    assert t[1][1] == Decimal("200"), "income"
-    assert t[1][2] == Decimal("204"), "cost"
-    assert t[1][3] == Decimal("-4"), "P/L"
-    assert t[1][4] == Decimal("4"), "commission"
-    assert t[1][1] - t[1][2] == t[1][3], "P/L"
+    idx = 0
+    assert t[idx][0] == 2020, "year"
 
-    assert t[3][0] == 'TOTAL', "symbol"
-    assert t[3][1] == Decimal("2200"), "income"
-    assert t[3][2] == Decimal("1212"), "cost"
-    assert t[3][3] == Decimal("988"), "P/L"
-    assert t[3][1] - t[3][2] == t[3][3], "P/L"
+    idx += 1
+    assert t[idx][0] == 'ABC', "symbol"
+    assert t[idx][1] == Decimal("2000"), "income"
+    assert t[idx][2] == Decimal("1008"), "cost"
+    assert t[idx][3] == Decimal("992"), "P/L"
+    assert t[idx][4] == Decimal("8"), "commission"
+    assert t[idx][1] - t[idx][2] == t[idx][3], "P/L"
 
-    assert t[0][1] + t[1][1] == Decimal("2200"), "income"
-    assert t[0][2] + t[1][2] == Decimal("1212"), "cost"
-    assert t[0][3] + t[1][3] == Decimal("988"), "P/L"
+    idx += 2
+    assert t[idx][0] == 'TOTAL 2020', "symbol"
+    assert t[idx][1] == Decimal("2000"), "income"
+    assert t[idx][2] == Decimal("1008"), "cost"
+    assert t[idx][3] == Decimal("992"), "P/L"
+    assert t[idx][1] - t[idx][2] == t[idx][3], "P/L"
+
+    idx += 1
+    assert t[idx][0] == 2021, "year"
+
+    idx += 1
+    assert t[idx][0] == 'XYZ', "symbol"
+    assert t[idx][1] == Decimal("200"), "income"
+    assert t[idx][2] == Decimal("204"), "cost"
+    assert t[idx][3] == Decimal("-4"), "P/L"
+    assert t[idx][4] == Decimal("4"), "commission"
+    assert t[idx][1] - t[idx][2] == t[idx][3], "P/L"
+
+    idx += 2
+    assert t[idx][0] == 'TOTAL 2021', "symbol"
+    assert t[idx][1] == Decimal("200"), "income"
+    assert t[idx][2] == Decimal("204"), "cost"
+    assert t[idx][3] == Decimal("-4"), "P/L"
+    assert t[idx][1] - t[idx][2] == t[idx][3], "P/L"
 
 
 def test_get_pln_total(exante_account):
     t = exante_account.get_pln_total()[1:]  # skip header
-    assert len(t) == 1
-    assert t[0][0] == Decimal("2200"), "income"
-    assert t[0][1] == Decimal("1212"), "cost"
-    assert t[0][2] == Decimal("988"), "P/L"
-    assert t[0][0] - t[0][1] == t[0][2], "P/L"
+    assert len(t) == 2
+    idx = 0
+    assert t[idx][0] == 2020, "year"
+    assert t[idx][1] == Decimal("2000"), "income"
+    assert t[idx][2] == Decimal("1008"), "cost"
+    assert t[idx][3] == Decimal("992"), "P/L"
+    assert t[idx][1] - t[idx][2] == t[idx][3], "P/L"
+
+    idx += 1
+    assert t[idx][0] == 2021, "year"
+    assert t[idx][1] == Decimal("200"), "income"
+    assert t[idx][2] == Decimal("204"), "cost"
+    assert t[idx][3] == Decimal("-4"), "P/L"
+    assert t[idx][1] - t[idx][2] == t[idx][3], "P/L"
 
 
 def test_dividends(exante_account):
     t = exante_account.get_dividends()[1:]  # skip header
-    assert len(t) == 1
-    assert t[0][0] == 'QQQ', "symbol"
-    assert t[0][2] == Decimal("60.10"), "income"
-    assert t[0][3] == Decimal("2.2"), "tax"
-    assert round(t[0][3] / t[0][2] * 100) == Decimal("4"), "%"
+    assert len(t) == 2
+    idx = 0
+    assert t[idx][0] == 2020, "year"
+    assert t[idx][1] == 'QQQ', "symbol"
+    assert t[idx][3] == Decimal("60.10"), "income"
+    assert t[idx][4] == Decimal("2.2"), "tax"
+    assert round(t[idx][4] / t[idx][3] * 100) == Decimal("4"), "%"
+
+    idx += 1
+    assert t[idx][0] == 2021, "year"
+    assert t[idx][1] == 'QQQ', "symbol"
+    assert t[idx][3] == Decimal("120.2"), "income"
+    assert t[idx][4] == Decimal("4.4"), "tax"
+    assert round(t[idx][4] / t[idx][3] * 100) == Decimal("4"), "%"
 
 
 def test_dividends_pln(exante_account):
     t = exante_account.get_dividends_pln()[1:]  # skip header
-    assert len(t) == 1
-    assert t[0][0] == Decimal("120.20"), "income"
-    assert t[0][1] == Decimal("4.40"), "paid tax"
-    assert round(t[0][1] / t[0][0] * 100) == Decimal("4"), "%"
-    assert round(t[0][0] * Decimal("0.19"), 2) == Decimal("22.84"), "total to pay"
-    assert round(round(t[0][0] * Decimal("0.19"), 2) - t[0][1]) == Decimal("18"), "left to pay"
+    assert len(t) == 2
+    idx = 0
+    assert t[idx][0] == 2020, "year"
+    assert t[idx][1] == Decimal("120.20"), "income"
+    assert t[idx][2] == Decimal("4.40"), "paid tax"
+    assert round(t[idx][2] / t[idx][1] * 100) == Decimal("4"), "%"
+    assert round(t[idx][1] * Decimal("0.19"), 2) == Decimal("22.84"), "total to pay"
+    assert round(round(t[idx][1] * Decimal("0.19"), 2) - t[idx][2]) == Decimal("18"), "left to pay"
