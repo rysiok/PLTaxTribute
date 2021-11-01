@@ -87,6 +87,10 @@ class ExanteAccount(AccountBase):
             return
 
     def _load_cash_flow(self, nbp):
+        #
+        # self.cash_flows = {year: {'symbol': [cash_flow_item,...],...},...}
+        #
+
         for symbol, tr in self.transaction_log.items():
             sell = [t for t in tr if t.side == TransactionSide.SELL]
             buy = [t for t in tr if t.side == TransactionSide.BUY]
@@ -96,98 +100,112 @@ class ExanteAccount(AccountBase):
                 self._warning_handler(f"No BUY transactions for symbol: {symbol}.")
                 continue
 
-            cashflow = []
+            def _cf(year: int, symbol: str):
+                if year not in self.cash_flows:
+                    self.cash_flows[year] = {}
+                if symbol not in self.cash_flows[year]:
+                    self.cash_flows[year][symbol] = []
+                return self.cash_flows[year][symbol]
+
             for s in sell:
                 pln = nbp.get_nbp_day_before(s.currency, s.time)
-                cashflow.append(CashFlowItem(CashFlowItemType.TRADE, s.time, s.count, s.price, s.currency, pln))
-                cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, s.time, -1, s.commission, s.currency, pln))
+                cf = _cf(s.time.year, symbol)
+                cf.append(CashFlowItem(CashFlowItemType.TRADE, s.time, s.count, s.price, s.currency, pln))
+                cf.append(CashFlowItem(CashFlowItemType.COMMISSION, s.time, -1, s.commission, s.currency, pln))
 
                 while s.count and buy:
                     b = buy[0]
                     b.count -= s.count
                     pln = nbp.get_nbp_day_before(s.currency, b.time)
                     if b.count <= 0:  # more to sell or everything sold
-                        cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -(b.count + s.count), b.price, s.currency, pln))
-                        cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, b.commission, s.currency, pln))  # full cost
+                        cf.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -(b.count + s.count), b.price, s.currency, pln))
+                        cf.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, b.commission, s.currency, pln))  # full cost
                         s.count = -b.count  # left count
                         del buy[0]  # remove matching buy transaction
                     else:  # partial sell
-                        cashflow.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -s.count, b.price, s.currency, pln))
+                        cf.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -s.count, b.price, s.currency, pln))
                         ratio = Decimal(s.count / (s.count + b.count))
                         commission = round(b.commission * ratio, 2)
-                        cashflow.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, commission, s.currency,
-                                                     nbp.get_nbp_day_before(s.currency, s.time)))  # partial cost
+                        cf.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, commission, s.currency,
+                                               nbp.get_nbp_day_before(s.currency, s.time)))  # partial cost
                         b.commission -= commission
                         break
             for d in dividend:
                 pln = nbp.get_nbp_day_before(d.currency, d.time)
-                cashflow.append(CashFlowItem(CashFlowItemType.DIVIDEND, d.time, 1, d.value, d.currency, pln))
-                cashflow.append(CashFlowItem(CashFlowItemType.TAX, d.time, 1, d.tax, d.currency, pln))
-
-            self.cash_flows[symbol] = cashflow
+                cf = _cf(d.time.year, symbol)
+                cf.append(CashFlowItem(CashFlowItemType.DIVIDEND, d.time, 1, d.value, d.currency, pln))
+                cf.append(CashFlowItem(CashFlowItemType.TAX, d.time, 1, d.tax, d.currency, pln))
 
     def get_foreign(self):
         table = [["symbol", "currency", "income", "cost", "P/L", "(commission)"]]
-        for symbol, cashflow in self.cash_flows.items():
-            if cashflow:  # output only items with data
-                trade_income = sum([cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-                if trade_income:
-                    trade_cost = -sum([cf.count * cf.price for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
-                    commission_cost = -sum([cf.count * cf.price for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
-                    assert sum(
-                        [cf.count * cf.price for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.COMMISSION]) == 0, f"commission_cost != 0"
+        for year in self.cash_flows:
+            table.append([year, " ", " ", " ", " ", " "])
+            for symbol, cash_flow in self.cash_flows[year].items():
+                if cash_flow:  # output only items with data
+                    trade_income = sum([cf.count * cf.price for cf in cash_flow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+                    if trade_income:
+                        trade_cost = -sum([cf.count * cf.price for cf in cash_flow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
+                        commission_cost = -sum([cf.count * cf.price for cf in cash_flow if cf.type == CashFlowItemType.COMMISSION])
+                        assert sum(
+                            [cf.count * cf.price for cf in cash_flow if cf.count > 0 and cf.type == CashFlowItemType.COMMISSION]) == 0, f"commission_cost != 0"
 
-                    table.append(
-                        [symbol, cashflow[0].currency, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost,
-                         commission_cost])
+                        table.append(
+                            [symbol, cash_flow[0].currency, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost,
+                             commission_cost])
         return table
 
     def get_pln(self):
         table = [["symbol", "income", "cost", "P/L", "(commission)"]]
-        total_trade_income = 0
-        total_trade_cost = 0
 
-        for symbol, cashflow in self.cash_flows.items():
-            if cashflow:  # output only items with data
-                trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-                if trade_income:
-                    trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
-                    commission_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
+        for year in self.cash_flows:
+            total_trade_income = 0
+            total_trade_cost = 0
+            table.append([year, " ", " ", " ", " ", " "])
+            for symbol, cashflow in self.cash_flows[year].items():
+                if cashflow:  # output only items with data
+                    trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+                    if trade_income:
+                        trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count < 0 and cf.type == CashFlowItemType.TRADE])
+                        commission_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.type == CashFlowItemType.COMMISSION])
 
-                    table.append([symbol, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost, commission_cost])
-                    total_trade_income += trade_income
-                    total_trade_cost += trade_cost + commission_cost
+                        table.append([symbol, trade_income, trade_cost + commission_cost, trade_income - trade_cost - commission_cost, commission_cost])
+                        total_trade_income += trade_income
+                        total_trade_cost += trade_cost + commission_cost
 
-        table.append(["-----"])
-        table.append(["TOTAL", total_trade_income, total_trade_cost, total_trade_income - total_trade_cost])
+            table.append(["-----"])
+            table.append([f"TOTAL {year}", total_trade_income, total_trade_cost, total_trade_income - total_trade_cost])
         return table
 
     def get_pln_total(self):
-        table = [["income\r[PIT38 C22]", "cost\r[PIT38 C23]", "P/L"]]
-        trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cash_flows for cf in self.cash_flows[key] if
-                            cf.count > 0 and cf.type == CashFlowItemType.TRADE])
-        trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cash_flows for cf in self.cash_flows[key] if cf.count < 0])
-        table.append([trade_income, trade_cost, trade_income - trade_cost])
+        table = [["year", "income\r[PIT38 C22]", "cost\r[PIT38 C23]", "P/L"]]
+        for year in self.cash_flows:
+            trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cash_flows[year] for cf in self.cash_flows[year][key] if
+                                cf.count > 0 and cf.type == CashFlowItemType.TRADE])
+            trade_cost = -sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cash_flows[year] for cf in self.cash_flows[year][key] if cf.count < 0])
+            table.append([year, trade_income, trade_cost, trade_income - trade_cost])
         return table
 
     def get_dividends(self):
-        table = [["symbol", "currency", "income", "paid tax", "%"]]
-        for symbol, cashflow in self.cash_flows.items():
-            if cashflow:  # output only items with data
-                income = sum([cf.price for cf in cashflow if cf.type == CashFlowItemType.DIVIDEND])
-                tax = sum([cf.price for cf in cashflow if cf.type == CashFlowItemType.TAX])
-                if income > 0:
-                    percent = round(tax / income * 100)
-                    table.append([symbol, cashflow[0].currency, income, tax, percent])
+        table = [["year", "symbol", "currency", "income", "paid tax", "%"]]
+        for year in self.cash_flows:
+            for symbol, cashflow in self.cash_flows[year].items():
+                if cashflow:  # output only items with data
+                    income = sum([cf.price for cf in cashflow if cf.type == CashFlowItemType.DIVIDEND])
+                    tax = sum([cf.price for cf in cashflow if cf.type == CashFlowItemType.TAX])
+                    if income > 0:
+                        percent = round(tax / income * 100)
+                        table.append([year, symbol, cashflow[0].currency, income, tax, percent])
         return table
 
     def get_dividends_pln(self):
-        table = [["income", "paid tax\r[PIT38 G45]", "%", "total to pay (19%)\r[PIT38 G46]", "left to pay (19%)\r[PIT38 G47]"]]
-        income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cash_flows for cf in self.cash_flows[key] if cf.type == CashFlowItemType.DIVIDEND])
-        paid_tax = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cash_flows for cf in self.cash_flows[key] if cf.type == CashFlowItemType.TAX])
-        if income > 0:
-            percent = round(paid_tax / income * 100)
-            tax = round(income * Decimal("0.19"), 2)
-            left_to_pay = round(tax - paid_tax)
-            table.append([income, paid_tax, percent, tax, left_to_pay])
+        table = [["year", "income", "paid tax\r[PIT38 G45]", "%", "total to pay (19%)\r[PIT38 G46]", "left to pay (19%)\r[PIT38 G47]"]]
+        for year in self.cash_flows:
+            income = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cash_flows[year] for cf in self.cash_flows[year][key] if cf.type == CashFlowItemType.DIVIDEND])
+            paid_tax = sum([round(cf.count * cf.price * cf.pln, 2) for key in self.cash_flows[year] for cf in self.cash_flows[year][key] if cf.type == CashFlowItemType.TAX])
+            if income > 0:
+                percent = round(paid_tax / income * 100)
+                tax = round(income * Decimal("0.19"), 2)
+                left_to_pay = round(tax - paid_tax)
+                table.append([year, income, paid_tax, percent, tax, left_to_pay])
         return table
+

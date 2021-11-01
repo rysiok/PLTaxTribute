@@ -54,7 +54,7 @@ class AccountBase(metaclass=ABCMeta):
     def load_transaction_log(self, file):  # pragma: no cover
         pass
 
-    def load_transaction_logs(self, directory):  # pragma: no cover
+    def load_transaction_logs(self, directory):
         self._load_transaction_logs(directory, self.load_transaction_log)
 
     @abstractmethod
@@ -64,3 +64,4 @@ class AccountBase(metaclass=ABCMeta):
     @abstractmethod
     def _load_cash_flow(self, nbp):  # pragma: no cover
         pass
+
