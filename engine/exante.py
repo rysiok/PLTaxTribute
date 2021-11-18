@@ -126,8 +126,7 @@ class ExanteAccount(AccountBase):
                         cf.append(CashFlowItem(CashFlowItemType.TRADE, b.time, -s.count, b.price, s.currency, pln))
                         ratio = Decimal(s.count / (s.count + b.count))
                         commission = round(b.commission * ratio, 2)
-                        cf.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, commission, s.currency,
-                                               nbp.get_nbp_day_before(s.currency, s.time)))  # partial cost
+                        cf.append(CashFlowItem(CashFlowItemType.COMMISSION, b.time, -1, commission, s.currency, pln))  # partial cost
                         b.commission -= commission
                         break
             for d in dividend:
@@ -160,7 +159,7 @@ class ExanteAccount(AccountBase):
         for year in self.cash_flows:
             total_trade_income = 0
             total_trade_cost = 0
-            table.append([year, " ", " ", " ", " ", " "])
+            table.append([year, " ", " ", " ", " "])
             for symbol, cashflow in self.cash_flows[year].items():
                 if cashflow:  # output only items with data
                     trade_income = sum([round(cf.count * cf.price * cf.pln, 2) for cf in cashflow if cf.count > 0 and cf.type == CashFlowItemType.TRADE])
